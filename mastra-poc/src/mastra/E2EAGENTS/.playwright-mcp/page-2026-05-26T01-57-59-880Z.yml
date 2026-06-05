@@ -1,0 +1,40 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - link "RODMONTBLACK STORE" [ref=e4] [cursor=pointer]:
+        - /url: /
+        - img "RODMONTBLACK STORE" [ref=e5]
+      - button [ref=e6] [cursor=pointer]:
+        - img [ref=e7]
+  - main [ref=e11]:
+    - generic [ref=e12]:
+      - heading "Proceso de Pago" [level=1] [ref=e13]
+      - generic [ref=e14]:
+        - generic [ref=e15]:
+          - generic [ref=e16]: "1"
+          - generic [ref=e17]: Datos del Cliente
+        - generic [ref=e18]:
+          - generic [ref=e19]: "2"
+          - generic [ref=e20]: Dirección de Envío
+        - generic [ref=e21]:
+          - generic [ref=e22]: "3"
+          - generic [ref=e23]: Datos de Pago
+        - generic [ref=e24]:
+          - generic [ref=e25]: "4"
+          - generic [ref=e26]: Resumen de Compra
+      - generic [ref=e28]:
+        - generic [ref=e30]: Datos del Cliente
+        - generic [ref=e32]:
+          - generic [ref=e33]:
+            - generic [ref=e34]: Nombre
+            - textbox "Nombre" [ref=e35]
+          - generic [ref=e36]:
+            - generic [ref=e37]: Apellido
+            - textbox "Apellido" [ref=e38]
+          - generic [ref=e39]:
+            - generic [ref=e40]: Email
+            - textbox "Email" [ref=e41]
+        - button "Siguiente" [ref=e43] [cursor=pointer]
+  - contentinfo [ref=e44]:
+    - generic [ref=e45]: © 2025 rodmontblack Store. Todos los derechos reservados.
+  - alert [ref=e46]

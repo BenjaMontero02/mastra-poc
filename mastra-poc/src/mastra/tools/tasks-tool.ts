@@ -2,12 +2,14 @@ import { createTool } from '@mastra/core/tools';
 import { z } from 'zod/v4';
 import fs from 'fs/promises';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
-const BASE_DIR = path.resolve(process.cwd(), '..');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
 
-const QUEUE_DIR = path.join(BASE_DIR, '.tasks', 'queue');
-const DONE_DIR = path.join(BASE_DIR, '.tasks', 'done');
-const PLANS_DIR = path.join(BASE_DIR, '.plans');
+const QUEUE_DIR = path.join(PROJECT_ROOT, '.tasks', 'queue');
+const DONE_DIR = path.join(PROJECT_ROOT, '.tasks', 'done');
+const PLANS_DIR = path.join(PROJECT_ROOT, '.plans');
 
 export const queueTool = createTool({
   id: 'task-queue-take',
@@ -21,8 +23,7 @@ export const queueTool = createTool({
     files: z.array(z.string()).nullable(),
     done: z.boolean(),
   }),
-  execute: async ({ context }) => {
-    const { filename } = context;
+  execute: async ({ filename }) => {
     await fs.mkdir(QUEUE_DIR, { recursive: true });
 
     if (!filename) {
@@ -57,8 +58,7 @@ export const doneTool = createTool({
     path: z.string(),
     done: z.boolean(),
   }),
-  execute: async ({ context }) => {
-    const { filename, content } = context;
+  execute: async ({ filename, content }) => {
     await fs.mkdir(DONE_DIR, { recursive: true });
     const filePath = path.join(DONE_DIR, filename);
     await fs.writeFile(filePath, content, 'utf-8');
@@ -80,8 +80,7 @@ export const plansTool = createTool({
     path: z.string(),
     done: z.boolean(),
   }),
-  execute: async ({ context }) => {
-    const { filename, content } = context;
+  execute: async ({ filename, content }) => {
     await fs.mkdir(PLANS_DIR, { recursive: true });
     const filePath = path.join(PLANS_DIR, filename);
     await fs.writeFile(filePath, content, 'utf-8');

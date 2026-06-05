@@ -1,0 +1,49 @@
+- generic [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - link "RODMONTBLACK STORE" [ref=e4] [cursor=pointer]:
+        - /url: /
+        - img "RODMONTBLACK STORE" [ref=e5]
+      - button "1" [ref=e56] [cursor=pointer]:
+        - img [ref=e7]
+        - generic [ref=e57]: "1"
+  - main [ref=e11]:
+    - generic [ref=e92]:
+      - heading "Proceso de Pago" [level=1] [ref=e93]
+      - generic [ref=e94]:
+        - generic [ref=e95]:
+          - generic [ref=e96]: "1"
+          - generic [ref=e97]: Datos del Cliente
+        - generic [ref=e98]:
+          - generic [ref=e99]: "2"
+          - generic [ref=e100]: Dirección de Envío
+        - generic [ref=e101]:
+          - generic [ref=e102]: "3"
+          - generic [ref=e103]: Datos de Pago
+        - generic [ref=e104]:
+          - generic [ref=e105]: "4"
+          - generic [ref=e106]: Resumen de Compra
+      - generic [ref=e108]:
+        - generic [ref=e110]: Datos de Pago
+        - generic [ref=e112]:
+          - generic [ref=e113]:
+            - generic [ref=e114]: Número de Tarjeta
+            - textbox "Número de Tarjeta" [ref=e138]:
+              - /placeholder: XXXX-XXXX-XXXX-XXXX
+            - paragraph [ref=e139]: Número de tarjeta inválido
+          - generic [ref=e140]:
+            - generic [ref=e141]:
+              - generic [ref=e142]: Fecha de Expiración
+              - textbox "Fecha de Expiración" [ref=e143]:
+                - /placeholder: MM/YY
+              - paragraph [ref=e144]: Fecha inválida (MM/YY)
+            - generic [ref=e145]:
+              - generic [ref=e146]: CVV
+              - textbox "CVV" [ref=e147]
+              - paragraph [ref=e148]: CVV inválido
+        - generic [ref=e122]:
+          - button "Anterior" [ref=e125] [cursor=pointer]
+          - button "Siguiente" [active] [ref=e123] [cursor=pointer]
+  - contentinfo [ref=e53]:
+    - generic [ref=e54]: © 2025 rodmontblack Store. Todos los derechos reservados.
+  - alert [ref=e55]

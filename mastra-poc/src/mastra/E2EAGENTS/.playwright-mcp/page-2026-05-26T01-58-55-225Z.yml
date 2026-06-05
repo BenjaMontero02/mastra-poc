@@ -1,0 +1,46 @@
+- generic [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - link "RODMONTBLACK STORE" [ref=e4] [cursor=pointer]:
+        - /url: /
+        - img "RODMONTBLACK STORE" [ref=e5]
+      - button [ref=e6] [cursor=pointer]:
+        - img [ref=e7]
+  - main [ref=e11]:
+    - generic [ref=e12]:
+      - heading "Proceso de Pago" [level=1] [ref=e13]
+      - generic [ref=e14]:
+        - generic [ref=e15]:
+          - generic [ref=e16]: "1"
+          - generic [ref=e17]: Datos del Cliente
+        - generic [ref=e18]:
+          - generic [ref=e19]: "2"
+          - generic [ref=e20]: Dirección de Envío
+        - generic [ref=e21]:
+          - generic [ref=e22]: "3"
+          - generic [ref=e23]: Datos de Pago
+        - generic [ref=e24]:
+          - generic [ref=e25]: "4"
+          - generic [ref=e26]: Resumen de Compra
+      - generic [ref=e28]:
+        - generic [ref=e30]: Datos de Pago
+        - generic [ref=e32]:
+          - generic [ref=e33]:
+            - generic [ref=e34]: Número de Tarjeta
+            - textbox "Número de Tarjeta" [ref=e49]:
+              - /placeholder: XXXX-XXXX-XXXX-XXXX
+              - text: 4532-1111-2222-3333
+          - generic [ref=e50]:
+            - generic [ref=e51]:
+              - generic [ref=e52]: Fecha de Expiración
+              - textbox "Fecha de Expiración" [active] [ref=e53]:
+                - /placeholder: MM/YY
+            - generic [ref=e54]:
+              - generic [ref=e55]: CVV
+              - textbox "CVV" [ref=e56]: "122"
+        - generic [ref=e42]:
+          - button "Anterior" [ref=e48] [cursor=pointer]
+          - button "Siguiente" [ref=e43] [cursor=pointer]
+  - contentinfo [ref=e44]:
+    - generic [ref=e45]: © 2025 rodmontblack Store. Todos los derechos reservados.
+  - alert [ref=e46]

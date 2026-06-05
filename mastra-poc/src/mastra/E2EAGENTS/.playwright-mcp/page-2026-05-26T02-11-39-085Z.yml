@@ -1,0 +1,44 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - link "RODMONTBLACK STORE" [ref=e4] [cursor=pointer]:
+        - /url: /
+        - img "RODMONTBLACK STORE" [ref=e5]
+      - button [ref=e6] [cursor=pointer]:
+        - img [ref=e7]
+  - main [ref=e11]:
+    - generic [ref=e12]:
+      - generic [ref=e13]:
+        - heading "Autos de Juguete a Escala" [level=1] [ref=e14]
+        - paragraph [ref=e15]: Descubre nuestra colección exclusiva de autos a escala de alta calidad
+      - generic [ref=e16]:
+        - generic [ref=e17]:
+          - img "Ferrari F40 1:18" [ref=e19]
+          - generic [ref=e20]:
+            - generic [ref=e21]: Ferrari F40 1:18
+            - paragraph [ref=e22]: Modelo a escala 1:18 del icónico Ferrari F40. Acabado en rojo Ferrari clásico con detalles precisos.
+            - paragraph [ref=e23]: $129.99
+          - button "Agregar" [ref=e25] [cursor=pointer]
+        - generic [ref=e26]:
+          - img "Porsche 911 GT3 RS 1:24" [ref=e28]
+          - generic [ref=e29]:
+            - generic [ref=e30]: Porsche 911 GT3 RS 1:24
+            - paragraph [ref=e31]: Réplica detallada del Porsche 911 GT3 RS a escala 1:24. Presenta acabados premium y detalles precisos.
+            - paragraph [ref=e32]: $79.99
+          - button "Agregar" [ref=e34] [cursor=pointer]
+        - generic [ref=e35]:
+          - img "Ford Mustang 1967 1:18" [ref=e37]
+          - generic [ref=e38]:
+            - generic [ref=e39]: Ford Mustang 1967 1:18
+            - paragraph [ref=e40]: Clásico Ford Mustang de 1967 a escala 1:18. Reproducción fiel con acabado en rojo cereza.
+            - paragraph [ref=e41]: $99.99
+          - button "Agregar" [ref=e43] [cursor=pointer]
+        - generic [ref=e44]:
+          - img "Lamborghini Aventador 1:24" [ref=e46]
+          - generic [ref=e47]:
+            - generic [ref=e48]: Lamborghini Aventador 1:24
+            - paragraph [ref=e49]: Modelo a escala 1:24 del Lamborghini Aventador. Diseño moderno con líneas afiladas y detalles precisos.
+            - paragraph [ref=e50]: $89.99
+          - button "Agregar" [ref=e52] [cursor=pointer]
+  - contentinfo [ref=e53]:
+    - generic [ref=e54]: © 2025 rodmontblack Store. Todos los derechos reservados.

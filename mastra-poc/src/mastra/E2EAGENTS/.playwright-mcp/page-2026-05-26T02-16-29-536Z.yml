@@ -1,0 +1,45 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - link "RODMONTBLACK STORE" [ref=e4] [cursor=pointer]:
+        - /url: /
+        - img "RODMONTBLACK STORE" [ref=e5]
+      - button [ref=e170] [cursor=pointer]:
+        - img [ref=e7]
+  - main [ref=e11]:
+    - generic [ref=e171]:
+      - generic [ref=e172]:
+        - heading "Autos de Juguete a Escala" [level=1] [ref=e173]
+        - paragraph [ref=e174]: Descubre nuestra colección exclusiva de autos a escala de alta calidad
+      - generic [ref=e175]:
+        - generic [ref=e176]:
+          - img "Ferrari F40 1:18" [ref=e178]
+          - generic [ref=e179]:
+            - generic [ref=e180]: Ferrari F40 1:18
+            - paragraph [ref=e181]: Modelo a escala 1:18 del icónico Ferrari F40. Acabado en rojo Ferrari clásico con detalles precisos.
+            - paragraph [ref=e182]: $129.99
+          - button "Agregar" [ref=e184] [cursor=pointer]
+        - generic [ref=e185]:
+          - img "Porsche 911 GT3 RS 1:24" [ref=e187]
+          - generic [ref=e188]:
+            - generic [ref=e189]: Porsche 911 GT3 RS 1:24
+            - paragraph [ref=e190]: Réplica detallada del Porsche 911 GT3 RS a escala 1:24. Presenta acabados premium y detalles precisos.
+            - paragraph [ref=e191]: $79.99
+          - button "Agregar" [ref=e193] [cursor=pointer]
+        - generic [ref=e194]:
+          - img "Ford Mustang 1967 1:18" [ref=e196]
+          - generic [ref=e197]:
+            - generic [ref=e198]: Ford Mustang 1967 1:18
+            - paragraph [ref=e199]: Clásico Ford Mustang de 1967 a escala 1:18. Reproducción fiel con acabado en rojo cereza.
+            - paragraph [ref=e200]: $99.99
+          - button "Agregar" [ref=e202] [cursor=pointer]
+        - generic [ref=e203]:
+          - img "Lamborghini Aventador 1:24" [ref=e205]
+          - generic [ref=e206]:
+            - generic [ref=e207]: Lamborghini Aventador 1:24
+            - paragraph [ref=e208]: Modelo a escala 1:24 del Lamborghini Aventador. Diseño moderno con líneas afiladas y detalles precisos.
+            - paragraph [ref=e209]: $89.99
+          - button "Agregar" [ref=e211] [cursor=pointer]
+  - contentinfo [ref=e53]:
+    - generic [ref=e54]: © 2025 rodmontblack Store. Todos los derechos reservados.
+  - alert [ref=e55]

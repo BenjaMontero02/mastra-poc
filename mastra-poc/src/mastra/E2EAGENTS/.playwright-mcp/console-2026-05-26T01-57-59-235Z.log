@@ -1,0 +1,4 @@
+[   71157ms] [LOG] Total inputs: 3 @ :2
+[   71157ms] [LOG] Input 0: type=text, value="4532-1111-2222-3333", placeholder="XXXX-XXXX-XXXX-XXXX" @ :4
+[   71157ms] [LOG] Input 1: type=text, value="", placeholder="MM/YY" @ :4
+[   71157ms] [LOG] Input 2: type=text, value="122", placeholder="" @ :4

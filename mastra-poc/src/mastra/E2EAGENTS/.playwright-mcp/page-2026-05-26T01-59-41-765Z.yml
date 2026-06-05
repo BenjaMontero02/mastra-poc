@@ -1,0 +1,20 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - link "RODMONTBLACK STORE" [ref=e4] [cursor=pointer]:
+        - /url: /
+        - img "RODMONTBLACK STORE" [ref=e5]
+      - button [ref=e6] [cursor=pointer]:
+        - img [ref=e7]
+  - main [ref=e11]:
+    - generic [ref=e60]:
+      - generic [ref=e61]:
+        - img [ref=e62]
+        - generic [ref=e65]: ¡Compra Confirmada!
+      - generic [ref=e66]:
+        - paragraph [ref=e67]: Gracias por tu compra. Tu pedido ha sido procesado con éxito.
+        - paragraph [ref=e68]: Serás redirigido automáticamente en 4 segundos
+      - button "Volver a la tienda ahora" [ref=e70] [cursor=pointer]
+  - contentinfo [ref=e44]:
+    - generic [ref=e45]: © 2025 rodmontblack Store. Todos los derechos reservados.
+  - alert [ref=e46]
