@@ -116,5 +116,8 @@ Si un agente falla:
     playwrightTestExecutorAgent,
     executiveReporterAgent,
   },
+  defaultNetworkOptions: {
+    maxSteps: 25,
+  },
   workspace: qaWorkspace,
 });

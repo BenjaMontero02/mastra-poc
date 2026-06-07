@@ -88,5 +88,8 @@ Consolida todo en un resumen para el parent-supervisor:
     id: 'opencode-go/deepseek-v4-pro',
   },
   agents: { frontendArchitectAgent, backendArchitectAgent, docWriterAgent },
+  defaultNetworkOptions: {
+    maxSteps: 25,
+  },
   workspace: projectWorkspace,
 });

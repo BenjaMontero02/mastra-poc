@@ -70,5 +70,8 @@ Las skills que cargues son referencia de PATRONES y CAPAS de arquitectura. Los e
   model: {
     id: 'opencode-go/deepseek-v4-pro',
   },
+  defaultNetworkOptions: {
+    maxSteps: 25,
+  },
   workspace: backendArchitectWorkspace,
 });

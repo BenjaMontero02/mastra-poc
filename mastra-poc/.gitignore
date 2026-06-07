@@ -8,3 +8,6 @@ dist
 *.db-* 
 .netlify 
 .vercel 
+src/mastra/sandbox/
+src/mastra/workspaces/
+

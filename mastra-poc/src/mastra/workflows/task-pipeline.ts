@@ -41,7 +41,7 @@ Pasos:
 Devolve el taskId y el nombre de la branch.`,
       {
         memory: { thread: `task-${inputData.filename}`, resource: 'task-pipeline' },
-        maxSteps: 10,
+        maxSteps: 25,
       },
     );
 
@@ -76,7 +76,7 @@ const takeTask = createStep({
 
     const result = await agent.generate(
       `Usa el tool task-queue-take con filename "${inputData.filename}" y devolve SOLO el contenido de la tarea.`,
-      { memory: { thread: `task-${inputData.filename}`, resource: 'task-pipeline' }, maxSteps: 5 },
+      { memory: { thread: `task-${inputData.filename}`, resource: 'task-pipeline' }, maxSteps: 25 },
     );
 
     return {
@@ -112,7 +112,7 @@ const createPlans = createStep({
 
     const result = await agent.generate(
       `Delega al plan-creator la siguiente tarea y devolve los planes generados:\n\n${inputData.content}`,
-      { memory: { thread: `task-${inputData.filename}`, resource: 'task-pipeline' }, maxSteps: 15 },
+      { memory: { thread: `task-${inputData.filename}`, resource: 'task-pipeline' }, maxSteps: 25 },
     );
 
     return {

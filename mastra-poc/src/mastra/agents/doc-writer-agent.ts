@@ -53,5 +53,8 @@ Usa Markdown con headers claros (# ## ###), snippets de codigo, y tablas cuando 
   model: {
     id: 'opencode-go/deepseek-v4-pro',
   },
+  defaultNetworkOptions: {
+    maxSteps: 25,
+  },
   workspace: docsWorkspace,
 });

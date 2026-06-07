@@ -116,5 +116,8 @@ Lista verificable de condiciones para considerar la tarea completa:
   model: {
     id: 'opencode-go/deepseek-v4-pro',
   },
+  defaultNetworkOptions: {
+    maxSteps: 25,
+  },
   workspace: projectWorkspace,
 });

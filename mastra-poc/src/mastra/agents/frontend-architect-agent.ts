@@ -26,5 +26,8 @@ export const frontendArchitectAgent = new Agent({
   model: {
     id: 'opencode-go/deepseek-v4-pro',
   },
+  defaultNetworkOptions: {
+    maxSteps: 25,
+  },
   workspace: frontendArchitectWorkspace,
 });

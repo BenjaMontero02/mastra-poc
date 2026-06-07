@@ -63,6 +63,9 @@ Retornar al orquestador un resumen JSON con:
   model: {
     id: 'opencode-go/deepseek-v4-pro',
   },
+  defaultNetworkOptions: {
+    maxSteps: 25,
+  },
   browser: qaBrowser,
   workspace: qaWorkspace,
 });
