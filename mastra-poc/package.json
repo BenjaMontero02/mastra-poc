@@ -19,6 +19,7 @@
   "dependencies": {
     "@mastra/agent-browser": "^0.3.0",
     "@mastra/core": "^1.37.1",
+    "@mastra/docker": "^0.3.0",
     "@mastra/duckdb": "^1.4.0",
     "@mastra/evals": "^1.2.3",
     "@mastra/libsql": "^1.11.1",

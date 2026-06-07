@@ -6,15 +6,6 @@ import { MastraCompositeStore } from '@mastra/core/storage';
 import { Observability, MastraStorageExporter, MastraPlatformExporter, SensitiveDataFilter } from '@mastra/observability';
 import { weatherWorkflow } from './workflows/weather-workflow';
 import { taskPipelineWorkflow } from './workflows/task-pipeline';
-import { weatherAgent } from './agents/weather-agent';
-import { translatorAgent } from './agents/translator-agent';
-import { codeReviewerAgent } from './agents/code-reviewer-agent';
-import { frontendArchitectAgent } from './agents/frontend-architect-agent';
-import { backendArchitectAgent } from './agents/backend-architect-agent';
-import { planCreatorAgent } from './agents/plan-creator-agent';
-import { codeSupervisorAgent } from './agents/code-supervisor-agent';
-import { qaSupervisorAgent } from './agents/qa-supervisor-agent';
-import { docWriterAgent } from './agents/doc-writer-agent';
 import { parentSupervisorAgent } from './agents/parent-supervisor-agent';
 import { taskRefinerAgent } from './agents/task-refiner-agent';
 import { toolCallAppropriatenessScorer, completenessScorer, translationScorer } from './scorers/weather-scorer';
@@ -22,27 +13,17 @@ import { queueTool, doneTool, plansTool } from './tools/tasks-tool';
 import { writeTaskTool } from './tools/write-task-tool';
 import { taskMemory } from './memory';
 import { skillsWorkspace, projectWorkspace, docsWorkspace, frontendArchitectWorkspace, backendArchitectWorkspace, qaWorkspace } from './workspaces';
-import { qaPlaywrightMCP } from './mcp/qa-playwright-mcp';
 
 export const mastra = new Mastra({
   workflows: { weatherWorkflow, taskPipelineWorkflow },
   agents: {
-    weatherAgent,
-    translatorAgent,
-    codeReviewerAgent,
-    frontendArchitectAgent,
-    backendArchitectAgent,
-    planCreatorAgent,
-    codeSupervisorAgent,
-    qaSupervisorAgent,
-    docWriterAgent,
     parentSupervisorAgent,
     taskRefinerAgent,
   },
   scorers: { toolCallAppropriatenessScorer, completenessScorer, translationScorer },
   tools: { queueTool, doneTool, plansTool, writeTaskTool },
   memory: { taskMemory },
-  mcpServers: { qaPlaywrightMCP },
+  mcpServers: {},
   workspace: skillsWorkspace,
   storage: new MastraCompositeStore({
     id: 'composite-storage',
@@ -56,7 +37,7 @@ export const mastra = new Mastra({
   }),
   logger: new PinoLogger({
     name: 'Mastra',
-    level: 'info',
+    level: 'debug',
   }),
   observability: new Observability({
     configs: {

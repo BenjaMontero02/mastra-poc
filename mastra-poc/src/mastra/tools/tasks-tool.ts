@@ -5,7 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 
 const QUEUE_DIR = path.join(PROJECT_ROOT, '.tasks', 'queue');
 const DONE_DIR = path.join(PROJECT_ROOT, '.tasks', 'done');
@@ -47,46 +47,92 @@ export const queueTool = createTool({
   },
 });
 
-export const doneTool = createTool({
-  id: 'task-done-write',
-  description: 'Place a completed task file in .tasks/done. Creates the file with the given content.',
-  inputSchema: z.object({
-    filename: z.string().describe('Name of the file to create in done'),
-    content: z.string().describe('Content to write to the file'),
-  }),
-  outputSchema: z.object({
-    path: z.string(),
-    done: z.boolean(),
-  }),
-  execute: async ({ filename, content }) => {
-    await fs.mkdir(DONE_DIR, { recursive: true });
-    const filePath = path.join(DONE_DIR, filename);
-    await fs.writeFile(filePath, content, 'utf-8');
-    return {
-      path: filePath,
-      done: true,
-    };
-  },
-});
-
 export const plansTool = createTool({
   id: 'task-plans-write',
-  description: 'Place a plan file in .plans/. Creates the file with the given content.',
+  description: 'Guarda los planes generados en .plans/ y PIDE CONFIRMACION al usuario antes de escribir. El usuario debe aprobar los planes para continuar.',
   inputSchema: z.object({
     filename: z.string().describe('Name of the file to create in plans'),
-    content: z.string().describe('Content to write to the file'),
+    content: z.string().describe('Full plan content in markdown (code plan + QA plan)'),
   }),
   outputSchema: z.object({
     path: z.string(),
     done: z.boolean(),
+    approved: z.boolean(),
+    feedback: z.string().nullable(),
   }),
-  execute: async ({ filename, content }) => {
+  suspendSchema: z.object({
+    message: z.string(),
+    filename: z.string(),
+    planSummary: z.string(),
+  }),
+  resumeSchema: z.object({
+    approved: z.boolean(),
+    feedback: z.string().optional(),
+  }),
+  execute: async ({ filename, content }, context) => {
+    const { resumeData } = context?.agent ?? {};
+
+    if (!resumeData?.approved) {
+      return context?.agent?.suspend({
+        message: 'Revisa los planes generados. ¿Aprobás la ejecucion?',
+        filename,
+        planSummary: content.slice(0, 2000),
+      });
+    }
+
     await fs.mkdir(PLANS_DIR, { recursive: true });
     const filePath = path.join(PLANS_DIR, filename);
     await fs.writeFile(filePath, content, 'utf-8');
     return {
       path: filePath,
       done: true,
+      approved: true,
+      feedback: resumeData.feedback ?? null,
+    };
+  },
+});
+
+export const doneTool = createTool({
+  id: 'task-done-write',
+  description: 'Cierra la tarea moviendola a .tasks/done y PIDE CONFIRMACION al usuario. El usuario debe aprobar que la tarea esta completa.',
+  inputSchema: z.object({
+    filename: z.string().describe('Name of the file to create in done'),
+    content: z.string().describe('Final summary of the completed task'),
+  }),
+  outputSchema: z.object({
+    path: z.string(),
+    done: z.boolean(),
+    approved: z.boolean(),
+    feedback: z.string().nullable(),
+  }),
+  suspendSchema: z.object({
+    message: z.string(),
+    filename: z.string(),
+    summary: z.string(),
+  }),
+  resumeSchema: z.object({
+    approved: z.boolean(),
+    feedback: z.string().optional(),
+  }),
+  execute: async ({ filename, content }, context) => {
+    const { resumeData } = context?.agent ?? {};
+
+    if (!resumeData?.approved) {
+      return context?.agent?.suspend({
+        message: 'Tarea completada. ¿Confirma cerrar la tarea?',
+        filename,
+        summary: content.slice(0, 2000),
+      });
+    }
+
+    await fs.mkdir(DONE_DIR, { recursive: true });
+    const filePath = path.join(DONE_DIR, filename);
+    await fs.writeFile(filePath, content, 'utf-8');
+    return {
+      path: filePath,
+      done: true,
+      approved: true,
+      feedback: resumeData.feedback ?? null,
     };
   },
 });

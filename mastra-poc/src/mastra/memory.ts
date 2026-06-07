@@ -4,7 +4,10 @@ import { z } from 'zod/v4';
 const taskLoopSchema = z.object({
   taskFilename: z.string().optional(),
   taskContent: z.string().optional(),
-  phase: z.enum(['idle', 'planning', 'awaiting-approval', 'executing', 'testing', 'fixing', 'done']).optional(),
+  repoUrl: z.string().optional(),
+  sandboxPath: z.string().optional(),
+  branch: z.string().optional(),
+  phase: z.enum(['idle', 'git-setup', 'planning', 'awaiting-approval', 'executing', 'testing', 'fixing', 'done']).optional(),
   iteration: z.number().optional(),
   maxIterations: z.number().optional(),
   codePlan: z.string().optional(),
