@@ -49,7 +49,7 @@ export const queueTool = createTool({
 
 export const plansTool = createTool({
   id: 'task-plans-write',
-  description: 'Guarda los planes generados en .plans/ y PIDE CONFIRMACION al usuario antes de escribir. El usuario debe aprobar los planes para continuar.',
+  description: 'Guarda los planes generados en .plans/. La aprobacion humana se maneja en el workflow, no en la tool.',
   inputSchema: z.object({
     filename: z.string().describe('Name of the file to create in plans'),
     content: z.string().describe('Full plan content in markdown (code plan + QA plan)'),
@@ -57,44 +57,21 @@ export const plansTool = createTool({
   outputSchema: z.object({
     path: z.string(),
     done: z.boolean(),
-    approved: z.boolean(),
-    feedback: z.string().nullable(),
   }),
-  suspendSchema: z.object({
-    message: z.string(),
-    filename: z.string(),
-    planSummary: z.string(),
-  }),
-  resumeSchema: z.object({
-    approved: z.boolean(),
-    feedback: z.string().optional(),
-  }),
-  execute: async ({ filename, content }, context) => {
-    const { resumeData } = context?.agent ?? {};
-
-    if (!resumeData?.approved) {
-      return context?.agent?.suspend({
-        message: 'Revisa los planes generados. ¿Aprobás la ejecucion?',
-        filename,
-        planSummary: content.slice(0, 2000),
-      });
-    }
-
+  execute: async ({ filename, content }) => {
     await fs.mkdir(PLANS_DIR, { recursive: true });
     const filePath = path.join(PLANS_DIR, filename);
     await fs.writeFile(filePath, content, 'utf-8');
     return {
       path: filePath,
       done: true,
-      approved: true,
-      feedback: resumeData.feedback ?? null,
     };
   },
 });
 
 export const doneTool = createTool({
   id: 'task-done-write',
-  description: 'Cierra la tarea moviendola a .tasks/done y PIDE CONFIRMACION al usuario. El usuario debe aprobar que la tarea esta completa.',
+  description: 'Cierra la tarea moviendola a .tasks/done. La confirmacion humana se maneja externamente.',
   inputSchema: z.object({
     filename: z.string().describe('Name of the file to create in done'),
     content: z.string().describe('Final summary of the completed task'),
@@ -102,37 +79,14 @@ export const doneTool = createTool({
   outputSchema: z.object({
     path: z.string(),
     done: z.boolean(),
-    approved: z.boolean(),
-    feedback: z.string().nullable(),
   }),
-  suspendSchema: z.object({
-    message: z.string(),
-    filename: z.string(),
-    summary: z.string(),
-  }),
-  resumeSchema: z.object({
-    approved: z.boolean(),
-    feedback: z.string().optional(),
-  }),
-  execute: async ({ filename, content }, context) => {
-    const { resumeData } = context?.agent ?? {};
-
-    if (!resumeData?.approved) {
-      return context?.agent?.suspend({
-        message: 'Tarea completada. ¿Confirma cerrar la tarea?',
-        filename,
-        summary: content.slice(0, 2000),
-      });
-    }
-
+  execute: async ({ filename, content }) => {
     await fs.mkdir(DONE_DIR, { recursive: true });
     const filePath = path.join(DONE_DIR, filename);
     await fs.writeFile(filePath, content, 'utf-8');
     return {
       path: filePath,
       done: true,
-      approved: true,
-      feedback: resumeData.feedback ?? null,
     };
   },
 });

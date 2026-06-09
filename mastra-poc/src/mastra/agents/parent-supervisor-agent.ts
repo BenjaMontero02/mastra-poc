@@ -32,8 +32,8 @@ El commit y push los hace el code-supervisor. Vos solo clonas, brancheas y limpi
 
 ## Tools
 - task-queue-take: lee tarea del queue
-- task-plans-write: guarda planes en .plans/ (requiere aprobacion humana)
-- task-done-write: cierra tarea en .tasks/done (requiere aprobacion humana)
+- task-plans-write: guarda planes en .plans/
+- task-done-write: cierra tarea en .tasks/done
 - execute_command: comandos git en el container Docker
 - workspace filesystem: read_file, write_file
 - workflow-task-pipeline: workflow completo (git-setup → take-task → create-plans → HITL → execute-loop → close-task)

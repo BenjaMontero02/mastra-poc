@@ -167,12 +167,15 @@ const approvePlans = createStep({
     }
 
     if (!approved) {
-      return await suspend({
-        reason: `Planes rechazados. Feedback: ${feedback ?? 'Sin feedback'}. Corregi y reenvia.`,
+      return {
+        filename: inputData.filename,
+        content: inputData.content,
         plans: inputData.plans,
+        approved: false,
         taskId: inputData.taskId,
         branch: inputData.branch,
-      });
+        feedback,
+      };
     }
 
     return {
