@@ -1,5 +1,6 @@
 import { Memory } from '@mastra/memory';
 import { z } from 'zod/v4';
+import { detectedStackSchema } from './schemas/detected-stack';
 
 const taskLoopSchema = z.object({
   taskFilename: z.string().optional(),
@@ -18,10 +19,11 @@ const taskLoopSchema = z.object({
     summary: z.string().optional(),
   }).optional(),
   lastFixSummary: z.string().optional(),
+  detectedStack: detectedStackSchema.optional(),
+  appUrl: z.string().optional(),
 });
 
 export const taskMemory = new Memory({
-  name: 'Task Memory',
   options: {
     lastMessages: 50,
     workingMemory: {

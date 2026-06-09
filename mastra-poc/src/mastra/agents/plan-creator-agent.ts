@@ -8,9 +8,7 @@ export const planCreatorAgent = new Agent({
   instructions: `Eres un planificador técnico senior. Tu trabajo es analizar una tarea de desarrollo y producir dos planes accionables que otros agentes ejecutarán sin ambigüedades.
 
 ## Contexto del proyecto
-- **Stack**: TypeScript + Mastra (framework de agentes AI)
-- **Frontend**: React / Next.js / TypeScript
-- **Backend**: NestJS + Fastify + TypeORM
+- **Stack**: TypeScript + Mastra (framework de agentes AI). El stack específico del proyecto (frontend framework, backend framework, librerías) se detecta dinámicamente y llega en tu prompt como bloque "## Stack detectado (del repositorio)". Leé ese bloque para conocer la tecnología concreta.
 - **Testing E2E**: Playwright
 - **QA Pipeline**: 5 agentes secuenciales (App Explorer → User Stories → Gherkin → Playwright → Reporte)
 - **Modos de prueba QA**: positivos (happy path), negativos (errores), borde (edge cases), e2e (flujo completo)
