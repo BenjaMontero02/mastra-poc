@@ -177,6 +177,7 @@ const detectStack = createStep({
           memory: { thread: `task-${inputData.filename}`, resource: 'task-pipeline' },
           maxSteps: 20,
           structuredOutput: { schema: detectedStackSchema, model: { id: 'opencode-go/qwen3.7-plus' } },
+          modelSettings: { maxRetries: 5 },
         },
       );
 
@@ -209,6 +210,7 @@ const takeTask = createStep({
 const createPlans = createStep({
   id: 'create-plans',
   description: 'Genera plan de codigo y plan de QA con el plan-creator (structured output)',
+  retries: 2,
   inputSchema: z.object({ ...baseStateShape, detectedStack: detectedStackSchema, content: z.string() }),
   outputSchema: z.object({
     ...baseStateShape,
@@ -239,6 +241,7 @@ Genera el Plan de Codigo y el Plan de QA.`,
         maxSteps: 40,
         structuredOutput: { schema: plansSchema, model: { id: 'opencode-go/qwen3.7-plus' } },
         requestContext: buildRequestContext(inputData.detectedStack),
+        modelSettings: { maxRetries: 5 },
       },
     );
 
