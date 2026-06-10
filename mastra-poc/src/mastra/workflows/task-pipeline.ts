@@ -176,7 +176,7 @@ const detectStack = createStep({
         {
           memory: { thread: `task-${inputData.filename}`, resource: 'task-pipeline' },
           maxSteps: 20,
-          structuredOutput: { schema: detectedStackSchema },
+          structuredOutput: { schema: detectedStackSchema, model: { id: 'opencode-go/qwen3.7-plus' } },
         },
       );
 
@@ -237,7 +237,7 @@ Genera el Plan de Codigo y el Plan de QA.`,
       {
         memory: { thread: `task-${inputData.filename}`, resource: 'task-pipeline' },
         maxSteps: 40,
-        structuredOutput: { schema: plansSchema },
+        structuredOutput: { schema: plansSchema, model: { id: 'opencode-go/qwen3.7-plus' } },
         requestContext: buildRequestContext(inputData.detectedStack),
       },
     );

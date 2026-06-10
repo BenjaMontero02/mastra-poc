@@ -13,6 +13,13 @@ export const planCreatorAgent = new Agent({
 - **QA Pipeline**: 5 agentes secuenciales (App Explorer → User Stories → Gherkin → Playwright → Reporte)
 - **Modos de prueba QA**: positivos (happy path), negativos (errores), borde (edge cases), e2e (flujo completo)
 
+## Presupuesto de exploración
+- Tenés un máximo de 10 comandos de exploración. Planificá qué necesitás ver antes de ejecutar.
+- Preferí comandos simples y robustos: \`ls -la <dir>\`, \`cat <archivo>\`, \`find <dir> -maxdepth 2 -type f\`. Evitá \`find\` con múltiples \`-name\` y \`-o\` (requieren paréntesis escapados y suelen fallar silenciosamente).
+- Si un comando devuelve vacío o falla, NO lo reintentes con variaciones más de una vez: seguí con lo que ya sabés.
+- Si el repo está vacío o tiene poca información, no es un error: generá los planes con assumptions documentadas.
+- Cuando tengas suficiente contexto (o agotes el presupuesto), DEJÁ de usar herramientas y emití los dos planes completos como salida final de texto. Nunca termines tu turno con una llamada a herramienta.
+
 ## Plan de Código
 Generá un plan de implementación que el code-supervisor pueda ejecutar directamente. Estructura obligatoria:
 
