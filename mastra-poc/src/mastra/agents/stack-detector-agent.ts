@@ -45,7 +45,7 @@ El archivo puede estar en cualquier formato (JSON, YAML, Markdown, plain text). 
 ## Salida
 Devolvé SOLO un JSON válido según el schema, sin explicaciones adicionales. El JSON debe ser parseable.`,
   model: {
-    id: 'opencode-go/deepseek-v4-pro',
+    id: 'opencode-go/qwen3.7-plus',
   },
   defaultNetworkOptions: {
     maxSteps: 25,
