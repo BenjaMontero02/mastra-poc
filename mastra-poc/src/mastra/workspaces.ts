@@ -16,13 +16,16 @@ import { PROJECT_ROOT, SKILLS_DIR } from './paths';
  * { frontend?: { framework?: string, libs?: string[] }, ... }
  *
  * Fallback: If detectedStack not available, loads all frontend skills (graceful degradation).
+ *
+ * IMPORTANT: Returns absolute paths (host filesystem) for use with sandbox-based workspace.
+ * Skills are resolved relative to SKILLS_DIR/frontend and converted to absolute paths.
  */
 function resolveFrontendSkills(context: { requestContext?: any }): string[] {
   const skillsBase = path.join(SKILLS_DIR, 'frontend');
   const paths: string[] = [];
 
-  // Always load universal core principles first
-  paths.push('_core');
+  // Always load universal core principles first (absolute path)
+  paths.push(path.join(skillsBase, '_core'));
 
   try {
     const detectedStack = context.requestContext?.get?.('detectedStack');
@@ -42,8 +45,9 @@ function resolveFrontendSkills(context: { requestContext?: any }): string[] {
             framework === 'solid' ? 'solid' :
             'react'; // default fallback
 
-          if (!paths.includes(normalizedFramework)) {
-            paths.push(normalizedFramework);
+          const skillPath = path.join(skillsBase, normalizedFramework);
+          if (!paths.includes(skillPath)) {
+            paths.push(skillPath);
           }
         }
 
@@ -59,39 +63,44 @@ function resolveFrontendSkills(context: { requestContext?: any }): string[] {
               libLower === 'react-query' || libLower === 'tanstack-query' ? 'react' :
               null;
 
-            if (libFolder && !paths.includes(libFolder)) {
-              paths.push(libFolder);
+            if (libFolder) {
+              const skillPath = path.join(skillsBase, libFolder);
+              if (!paths.includes(skillPath)) {
+                paths.push(skillPath);
+              }
             }
           }
         }
       }
     } else {
-      // Fallback: load all frontend skills
+      // Fallback: load all frontend skills (absolute paths)
       // This maintains backward compatibility when detectedStack is unavailable
       const allFrontendDirs = fs.readdirSync(skillsBase, { withFileTypes: true })
         .filter(dirent => dirent.isDirectory() && !dirent.name.startsWith('.'))
-        .map(dirent => dirent.name);
+        .map(dirent => path.join(skillsBase, dirent.name));
 
       // Ensure _core is first
-      const coreIndex = allFrontendDirs.indexOf('_core');
+      const corePath = path.join(skillsBase, '_core');
+      const coreIndex = allFrontendDirs.indexOf(corePath);
       if (coreIndex > -1) {
         allFrontendDirs.splice(coreIndex, 1);
       }
 
-      return ['_core', ...allFrontendDirs];
+      return [corePath, ...allFrontendDirs];
     }
   } catch (error) {
-    // If resolver fails, return all frontend skills as safe fallback
+    // If resolver fails, return all frontend skills as safe fallback (absolute paths)
     const allFrontendDirs = fs.readdirSync(skillsBase, { withFileTypes: true })
       .filter(dirent => dirent.isDirectory() && !dirent.name.startsWith('.'))
-      .map(dirent => dirent.name);
+      .map(dirent => path.join(skillsBase, dirent.name));
 
-    const coreIndex = allFrontendDirs.indexOf('_core');
+    const corePath = path.join(skillsBase, '_core');
+    const coreIndex = allFrontendDirs.indexOf(corePath);
     if (coreIndex > -1) {
       allFrontendDirs.splice(coreIndex, 1);
     }
 
-    return ['_core', ...allFrontendDirs];
+    return [corePath, ...allFrontendDirs];
   }
 
   return paths;
@@ -108,14 +117,17 @@ function resolveFrontendSkills(context: { requestContext?: any }): string[] {
  * { backend?: { framework?: string, libs?: string[] }, ... }
  *
  * Fallback: If detectedStack not available, loads all backend skills (graceful degradation).
+ *
+ * IMPORTANT: Returns absolute paths (host filesystem) for use with sandbox-based workspace.
+ * Skills are resolved relative to SKILLS_DIR/backend and converted to absolute paths.
  */
 function resolveBackendSkills(context: { requestContext?: any }): string[] {
   const skillsBase = path.join(SKILLS_DIR, 'backend');
   const paths: string[] = [];
 
-  // Always load universal core principles and TypeScript (language used across all backends)
-  paths.push('_core');
-  paths.push('typescript');
+  // Always load universal core principles and TypeScript (language used across all backends) - absolute paths
+  paths.push(path.join(skillsBase, '_core'));
+  paths.push(path.join(skillsBase, 'typescript'));
 
   try {
     const detectedStack = context.requestContext?.get?.('detectedStack');
@@ -133,8 +145,9 @@ function resolveBackendSkills(context: { requestContext?: any }): string[] {
             framework === 'fastify' ? 'nestjs' :
             'nestjs'; // default fallback
 
-          if (!paths.includes(normalizedFramework)) {
-            paths.push(normalizedFramework);
+          const skillPath = path.join(skillsBase, normalizedFramework);
+          if (!paths.includes(skillPath)) {
+            paths.push(skillPath);
           }
         }
 
@@ -149,41 +162,50 @@ function resolveBackendSkills(context: { requestContext?: any }): string[] {
               libLower === 'sequelize' ? 'typeorm' : // similar patterns
               null;
 
-            if (libFolder && !paths.includes(libFolder)) {
-              paths.push(libFolder);
+            if (libFolder) {
+              const skillPath = path.join(skillsBase, libFolder);
+              if (!paths.includes(skillPath)) {
+                paths.push(skillPath);
+              }
             }
           }
         }
       }
     } else {
-      // Fallback: load all backend skills
+      // Fallback: load all backend skills (absolute paths)
       // This maintains backward compatibility when detectedStack is unavailable
       const allBackendDirs = fs.readdirSync(skillsBase, { withFileTypes: true })
         .filter(dirent => dirent.isDirectory() && !dirent.name.startsWith('.'))
-        .map(dirent => dirent.name);
+        .map(dirent => path.join(skillsBase, dirent.name));
 
       // Ensure _core and typescript are first
-      const coreIndex = allBackendDirs.indexOf('_core');
-      const tsIndex = allBackendDirs.indexOf('typescript');
+      const corePath = path.join(skillsBase, '_core');
+      const tsPath = path.join(skillsBase, 'typescript');
+
+      const coreIndex = allBackendDirs.indexOf(corePath);
+      const tsIndex = allBackendDirs.indexOf(tsPath);
 
       if (coreIndex > -1) allBackendDirs.splice(coreIndex, 1);
-      if (tsIndex > -1) allBackendDirs.splice(allBackendDirs.indexOf('typescript'), 1);
+      if (tsIndex > -1) allBackendDirs.splice(allBackendDirs.indexOf(tsPath), 1);
 
-      return ['_core', 'typescript', ...allBackendDirs];
+      return [corePath, tsPath, ...allBackendDirs];
     }
   } catch (error) {
-    // If resolver fails, return all backend skills as safe fallback
+    // If resolver fails, return all backend skills as safe fallback (absolute paths)
     const allBackendDirs = fs.readdirSync(skillsBase, { withFileTypes: true })
       .filter(dirent => dirent.isDirectory() && !dirent.name.startsWith('.'))
-      .map(dirent => dirent.name);
+      .map(dirent => path.join(skillsBase, dirent.name));
 
-    const coreIndex = allBackendDirs.indexOf('_core');
-    const tsIndex = allBackendDirs.indexOf('typescript');
+    const corePath = path.join(skillsBase, '_core');
+    const tsPath = path.join(skillsBase, 'typescript');
+
+    const coreIndex = allBackendDirs.indexOf(corePath);
+    const tsIndex = allBackendDirs.indexOf(tsPath);
 
     if (coreIndex > -1) allBackendDirs.splice(coreIndex, 1);
-    if (tsIndex > -1) allBackendDirs.splice(allBackendDirs.indexOf('typescript'), 1);
+    if (tsIndex > -1) allBackendDirs.splice(allBackendDirs.indexOf(tsPath), 1);
 
-    return ['_core', 'typescript', ...allBackendDirs];
+    return [corePath, tsPath, ...allBackendDirs];
   }
 
   return paths;
@@ -231,18 +253,14 @@ export const projectWorkspace = new Workspace({
 export const frontendArchitectWorkspace = new Workspace({
   id: 'frontend-architect',
   name: 'Frontend Architect Skills',
-  filesystem: new LocalFilesystem({
-    basePath: path.join(SKILLS_DIR, 'frontend'),
-  }),
+  sandbox: projectSandbox,
   skills: resolveFrontendSkills,
 });
 
 export const backendArchitectWorkspace = new Workspace({
   id: 'backend-architect',
   name: 'Backend Architect Skills',
-  filesystem: new LocalFilesystem({
-    basePath: path.join(SKILLS_DIR, 'backend'),
-  }),
+  sandbox: projectSandbox,
   skills: resolveBackendSkills,
 });
 

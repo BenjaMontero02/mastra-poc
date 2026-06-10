@@ -88,23 +88,25 @@ Ejecuta el flujo:
 
 Responde SOLO con JSON válido (sin markdown ni explicaciones).`;
 
-      const result = await agent.generate(prompt, {
+      const stream = await agent.stream(prompt, {
         memory: {
           thread: `qa-${inputData.appUrl.replace(/[^a-z0-9]/gi, '')}`,
           resource: 'qa-certification',
         },
         maxSteps: 25,
+        modelSettings: { maxRetries: 5 },
       });
+      const resultText = await stream.text;
 
       let parsedResult = { pagesDiscovered: 0, formsDiscovered: 0 };
       try {
-        const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+        const jsonMatch = resultText.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           parsedResult = JSON.parse(jsonMatch[0]);
         }
       } catch {
-        const pageMatch = result.text.match(/(\d+)\s*p[aá]ginas/i);
-        const formMatch = result.text.match(/(\d+)\s*formularios/i);
+        const pageMatch = resultText.match(/(\d+)\s*p[aá]ginas/i);
+        const formMatch = resultText.match(/(\d+)\s*formularios/i);
         parsedResult = {
           pagesDiscovered: pageMatch ? parseInt(pageMatch[1], 10) : 0,
           formsDiscovered: formMatch ? parseInt(formMatch[1], 10) : 0,
@@ -176,23 +178,25 @@ Ejecuta el flujo:
 
 Responde SOLO con JSON válido (sin markdown).`;
 
-      const result = await agent.generate(prompt, {
+      const stream = await agent.stream(prompt, {
         memory: {
           thread: `qa-stories-${inputData.mode}`,
           resource: 'qa-certification',
         },
         maxSteps: 25,
+        modelSettings: { maxRetries: 5 },
       });
+      const resultText = await stream.text;
 
       let parsedResult = { totalStories: 0, totalCriteria: 0 };
       try {
-        const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+        const jsonMatch = resultText.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           parsedResult = JSON.parse(jsonMatch[0]);
         }
       } catch {
-        const storyMatch = result.text.match(/(\d+)\s*historias?/i);
-        const critMatch = result.text.match(/(\d+)\s*criterios?/i);
+        const storyMatch = resultText.match(/(\d+)\s*historias?/i);
+        const critMatch = resultText.match(/(\d+)\s*criterios?/i);
         parsedResult = {
           totalStories: storyMatch ? parseInt(storyMatch[1], 10) : 0,
           totalCriteria: critMatch ? parseInt(critMatch[1], 10) : 0,
@@ -271,22 +275,24 @@ Ejecuta el flujo:
 
 Responde SOLO con JSON válido.`;
 
-      const result = await agent.generate(prompt, {
+      const stream = await agent.stream(prompt, {
         memory: {
           thread: `qa-gherkin-${inputData.mode}`,
           resource: 'qa-certification',
         },
         maxSteps: 25,
+        modelSettings: { maxRetries: 5 },
       });
+      const resultText = await stream.text;
 
       let parsedResult = { totalTestCases: 0 };
       try {
-        const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+        const jsonMatch = resultText.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           parsedResult = JSON.parse(jsonMatch[0]);
         }
       } catch {
-        const tcMatch = result.text.match(/(\d+)\s*test\s*cases?/i);
+        const tcMatch = resultText.match(/(\d+)\s*test\s*cases?/i);
         parsedResult = {
           totalTestCases: tcMatch ? parseInt(tcMatch[1], 10) : 0,
         };
@@ -372,25 +378,27 @@ Responde SOLO con JSON array válido:
   { "id": "TC-02", "passed": false, "reason": "El formulario no se cargó", "evidencePath": "..." }
 ]`;
 
-      const result = await agent.generate(prompt, {
+      const stream = await agent.stream(prompt, {
         memory: {
           thread: `qa-executor-${inputData.appUrl.replace(/[^a-z0-9]/gi, '')}`,
           resource: 'qa-certification',
         },
         maxSteps: 40,
+        modelSettings: { maxRetries: 5 },
       });
+      const resultText = await stream.text;
 
       let executedTests: any[] = [];
       try {
-        const jsonMatch = result.text.match(/\[[\s\S]*\]/);
+        const jsonMatch = resultText.match(/\[[\s\S]*\]/);
         if (jsonMatch) {
           executedTests = JSON.parse(jsonMatch[0]);
         }
       } catch {
-        const idMatches = result.text.match(/TC-\d+/g) || [];
+        const idMatches = resultText.match(/TC-\d+/g) || [];
         executedTests = idMatches.map((id) => ({
           id,
-          passed: result.text.includes(`${id}.*passed.*true`) ? true : false,
+          passed: resultText.includes(`${id}.*passed.*true`) ? true : false,
         }));
       }
 
@@ -499,13 +507,15 @@ Responde SOLO con JSON válido:
   "maturityClassification": "Bueno/Excelente/Regular/Critico"
 }`;
 
-      const result = await agent.generate(prompt, {
+      const stream = await agent.stream(prompt, {
         memory: {
           thread: `qa-reporter-${inputData.certificationPath.replace(/[^a-z0-9]/gi, '')}`,
           resource: 'qa-certification',
         },
         maxSteps: 25,
+        modelSettings: { maxRetries: 5 },
       });
+      const resultText = await stream.text;
 
       let parsedResult = {
         reportPath: `${inputData.certificationPath}/Reporte-Certificacion.html`,
@@ -516,7 +526,7 @@ Responde SOLO con JSON válido:
       };
 
       try {
-        const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+        const jsonMatch = resultText.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           parsedResult = JSON.parse(jsonMatch[0]);
         }

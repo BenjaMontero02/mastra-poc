@@ -401,11 +401,14 @@ ${inputData.appUrl ? `La app corria en ${inputData.appUrl}.` : 'ATENCION: la app
 
 Corregi UNICAMENTE lo necesario para que esos tests pasen. Commit local (NO push).`;
 
-    const codeResult = await codeSupervisorAgent.generate(codePrompt, {
+    // stream() evita el 500 del gateway en respuestas largas (ver create-plans)
+    const codeStream = await codeSupervisorAgent.stream(codePrompt, {
       memory: { thread, resource: 'task-pipeline' },
       maxSteps: 80,
       requestContext,
+      modelSettings: { maxRetries: 5 },
     });
+    const codeText = await codeStream.text;
 
     // Red de seguridad: commit de cualquier cambio que el supervisor no commiteo.
     await sandboxExec(
@@ -423,7 +426,7 @@ Corregi UNICAMENTE lo necesario para que esos tests pasen. Commit local (NO push
         appUrl: '',
         failedTests: [{ id: 'startup', reason: 'La aplicacion no levanto' }],
         qaNotes: `La app no levanto (metodo: ${app.method}). Logs:\n${app.logs ?? 'sin logs'}`,
-        codeSummary: codeResult.text.slice(0, 2000),
+        codeSummary: codeText.slice(0, 2000),
       };
     }
 
@@ -488,7 +491,7 @@ Corregi UNICAMENTE lo necesario para que esos tests pasen. Commit local (NO push
       qaNotes: qa.notes,
       maturityScore: qa.maturityScore,
       totalTests: qa.totalTests,
-      codeSummary: codeResult.text.slice(0, 2000),
+      codeSummary: codeText.slice(0, 2000),
     };
   },
 });
