@@ -6,26 +6,23 @@ import { LibSQLStore } from '@mastra/libsql';
 import { DuckDBStore } from "@mastra/duckdb";
 import { MastraCompositeStore } from '@mastra/core/storage';
 import { Observability, MastraStorageExporter, MastraPlatformExporter, SensitiveDataFilter } from '@mastra/observability';
-import { weatherWorkflow } from './workflows/weather-workflow';
 import { taskPipelineWorkflow } from './workflows/task-pipeline';
 import { qaCertificationWorkflow } from './workflows/qa-certification-workflow';
 import { parentSupervisorAgent } from './agents/parent-supervisor-agent';
 import { taskRefinerAgent } from './agents/task-refiner-agent';
 import { stackDetectorAgent } from './agents/stack-detector-agent';
-import { toolCallAppropriatenessScorer, completenessScorer, translationScorer } from './scorers/weather-scorer';
 import { queueTool, doneTool, plansTool } from './tools/tasks-tool';
 import { writeTaskTool } from './tools/write-task-tool';
 import { taskMemory } from './memory';
 import { skillsWorkspace, projectWorkspace, docsWorkspace, frontendArchitectWorkspace, backendArchitectWorkspace, qaWorkspace } from './workspaces';
 
 export const mastra = new Mastra({
-  workflows: { weatherWorkflow, taskPipelineWorkflow, qaCertificationWorkflow },
+  workflows: { taskPipelineWorkflow, qaCertificationWorkflow },
   agents: {
     parentSupervisorAgent,
     taskRefinerAgent,
     stackDetectorAgent,
   },
-  scorers: { toolCallAppropriatenessScorer, completenessScorer, translationScorer },
   tools: { queueTool, doneTool, plansTool, writeTaskTool },
   memory: { taskMemory },
   mcpServers: {},

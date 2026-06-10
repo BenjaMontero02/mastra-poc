@@ -164,8 +164,8 @@ const detectStack = createStep({
   inputSchema: z.object({ ...baseStateShape }),
   outputSchema: z.object({ ...baseStateShape, detectedStack: detectedStackSchema }),
   execute: async ({ inputData, mastra }) => {
-    const agent = mastra?.getAgent('stack-detector');
-    if (!agent) throw new Error('stack-detector agent not found');
+    const agent = mastra?.getAgent('stackDetectorAgent');
+    if (!agent) throw new Error('stackDetectorAgent agent not found');
 
     const result = await agent.generate(
       `Detecta el stack del repo clonado en ${inputData.repoPath} (usa execute_command para leer AGENTS.md, package.json y otros manifiestos).
