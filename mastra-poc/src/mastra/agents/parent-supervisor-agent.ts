@@ -2,7 +2,7 @@ import { Agent } from '@mastra/core/agent';
 import { planCreatorAgent } from './plan-creator-agent';
 import { codeSupervisorAgent } from './code-supervisor-agent';
 import { qaSupervisorAgent } from './qa-supervisor-agent';
-import { queueTool, doneTool, plansTool } from '../tools/tasks-tool';
+import { queueTool, doneTool, plansTool, approvePlansTool } from '../tools/tasks-tool';
 import { taskMemory } from '../memory';
 import { projectWorkspace } from '../workspaces';
 import { taskPipelineWorkflow } from '../workflows/task-pipeline';
@@ -18,6 +18,7 @@ export const parentSupervisorAgent = new Agent({
 - Delega, no hagas el trabajo de los sub-agentes.
 - El loop code→QA esta acotado a 20 iteraciones (lo controla el workflow, no vos).
 - Si algo falla, reporta el error con claridad; no reintentes el workflow completo sin que el usuario lo pida.
+- NUNCA llames task-approve-plans sin una orden explícita del usuario en su último mensaje.
 
 ## Arquitectura (para responder consultas)
 - El repo se clona DENTRO del contenedor del sandbox (/workspace/<taskId>); no hay copia en el host.
@@ -33,6 +34,7 @@ export const parentSupervisorAgent = new Agent({
 ## Tools
 - task-queue-take: lee/lista tareas del queue
 - task-plans-write / task-done-write: gestion de .plans y .tasks/done
+- task-approve-plans: aprueba/rechaza los planes del HITL (SOLO ante confirmación explícita del usuario; ante rechazo pedile el feedback)
 - execute_command: comandos dentro del sandbox Docker
 - workflow-task-pipeline: ciclo completo (git-setup → detect-stack → take-task → create-plans → HITL → loop code/QA → push/PR → teardown)
 
@@ -41,7 +43,7 @@ Se conciso. Delega con contexto justo.`,
     id: 'opencode-go/deepseek-v4-pro',
   },
   agents: { planCreatorAgent, codeSupervisorAgent, qaSupervisorAgent },
-  tools: { queueTool, doneTool, plansTool },
+  tools: { queueTool, doneTool, plansTool, approvePlansTool },
   defaultNetworkOptions: {
     maxSteps: 25,
   },

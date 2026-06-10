@@ -23,7 +23,7 @@ import { docWriterAgent } from './agents/doc-writer-agent';
 import { codeReviewerAgent } from './agents/code-reviewer-agent';
 import { frontendArchitectAgent } from './agents/frontend-architect-agent';
 import { backendArchitectAgent } from './agents/backend-architect-agent';
-import { queueTool, doneTool, plansTool } from './tools/tasks-tool';
+import { queueTool, doneTool, plansTool, approvePlansTool } from './tools/tasks-tool';
 import { writeTaskTool } from './tools/write-task-tool';
 import { taskMemory } from './memory';
 import { skillsWorkspace, projectWorkspace, docsWorkspace, frontendArchitectWorkspace, backendArchitectWorkspace, qaWorkspace } from './workspaces';
@@ -33,7 +33,7 @@ export const mastra = new Mastra({
   agents: {
     parentSupervisorAgent,
   },
-  tools: { queueTool, doneTool, plansTool, writeTaskTool },
+  tools: { queueTool, doneTool, plansTool, approvePlansTool, writeTaskTool },
   memory: { taskMemory },
   mcpServers: {},
   workspace: skillsWorkspace,

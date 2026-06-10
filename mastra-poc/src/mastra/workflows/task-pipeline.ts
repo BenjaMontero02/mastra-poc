@@ -428,7 +428,9 @@ Corregi UNICAMENTE lo necesario para que esos tests pasen. Commit local (NO push
     }
 
     // --- Fase 3: certificacion QA (sub-workflow determinista) ---
-    const qaWorkflow = mastra?.getWorkflow('qa-certification');
+    // getWorkflowById busca por el id del workflow ('qa-certification');
+    // getWorkflow espera la clave de registro en index.ts ('qaCertificationWorkflow').
+    const qaWorkflow = mastra?.getWorkflowById('qa-certification');
     if (!qaWorkflow) throw new Error('qa-certification workflow not found');
 
     let qa: {
