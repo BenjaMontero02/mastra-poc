@@ -451,6 +451,8 @@ Corregi UNICAMENTE lo necesario para que esos tests pasen. Commit local (NO push
           appUrl: app.appUrl,
           qaPlanPath: `${inputData.repoPath}/.qa/qa-plan.md`,
           certificationPath: `${inputData.repoPath}/.qa/cert-iter-${iteration}`,
+          testSuitePath: `${inputData.repoPath}/.qa/test-suite`,
+          regenerateSuite: false,
           mode: 'positivos',
           taskId: inputData.taskId,
           branch: inputData.branch,

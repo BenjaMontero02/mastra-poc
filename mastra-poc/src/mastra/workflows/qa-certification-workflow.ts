@@ -6,6 +6,7 @@ import { userStoryCreatorAgent } from '../agents/user-story-creator-agent';
 import { gherkinTestDesignerAgent } from '../agents/gherkin-test-designer-agent';
 import { playwrightTestExecutorAgent } from '../agents/playwright-test-executor-agent';
 import { executiveReporterAgent } from '../agents/executive-reporter-agent';
+import { projectSandbox } from '../workspaces';
 
 // ===========================
 // SCHEMAS DE ENTRADA Y SALIDA
@@ -15,6 +16,8 @@ export const qaCertificationInputSchema = z.object({
   appUrl: z.string().describe('URL de la aplicación corriendo'),
   qaPlanPath: z.string().describe('Ruta del plan de QA dentro del sandbox'),
   certificationPath: z.string().describe('Carpeta de salida (qa-output/...)'),
+  testSuitePath: z.string().describe('Carpeta fija de la suite de tests, reutilizada entre iteraciones'),
+  regenerateSuite: z.boolean().default(false).describe('Si true, borra y regenera la suite aunque exista'),
   mode: z
     .enum(['positivos', 'negativos', 'borde', 'e2e'])
     .default('positivos')
@@ -51,23 +54,78 @@ export const qaCertificationOutputSchema = z.object({
 
 const exploreAppStep = createStep({
   id: 'explore-app',
-  description: 'Navega la app y genera functional-discovery.md',
+  description: 'Navega la app y genera functional-discovery.md (o reutiliza suite existente)',
   inputSchema: qaCertificationInputSchema,
   outputSchema: z.object({
     ...qaCertificationInputSchema.shape,
     discoveryPath: z.string(),
     pagesDiscovered: z.number(),
     formsDiscovered: z.number(),
+    suiteReady: z.boolean().optional(),
+    suiteTestCount: z.number().optional(),
     step1Error: z.string().optional(),
   }),
   execute: async ({ inputData }) => {
     try {
+      // --- Check determinista: ¿existe suite ya generada? ---
+
+      // Sanitizacion: testSuitePath llega como input del workflow (invocable
+      // directo via playground/API) y se usa en comandos de shell del sandbox.
+      // Se pasa como argumento posicional ($1), nunca interpolado en el script.
+      if (
+        !/^[A-Za-z0-9._/-]+$/.test(inputData.testSuitePath) ||
+        !inputData.testSuitePath.startsWith('/workspace/') ||
+        inputData.testSuitePath.includes('..')
+      ) {
+        throw new Error(`testSuitePath invalido o fuera de /workspace: ${inputData.testSuitePath}`);
+      }
+
+      // Si regenerateSuite es true, limpiar la suite existente
+      if (inputData.regenerateSuite && projectSandbox.executeCommand) {
+        try {
+          await projectSandbox.executeCommand('sh', ['-c', 'rm -rf -- "$1"', 'sh', inputData.testSuitePath]);
+        } catch {
+          // Ignorar si falla (puede no existir)
+        }
+      }
+
+      // Contar test cases existentes en la suite
+      let suiteTestCount = 0;
+      if (projectSandbox.executeCommand) {
+        try {
+          const listResult = await projectSandbox.executeCommand('sh', [
+            '-c',
+            'ls -- "$1"/test-cases/TC-*.md 2>/dev/null | wc -l',
+            'sh',
+            inputData.testSuitePath,
+          ]);
+          suiteTestCount = listResult.success
+            ? parseInt(listResult.stdout?.trim() || '0', 10)
+            : 0;
+        } catch {
+          suiteTestCount = 0;
+        }
+      }
+
+      // Si hay TCs existentes, la suite está lista: reutilizar sin agente
+      if (suiteTestCount > 0) {
+        return {
+          ...inputData,
+          discoveryPath: `${inputData.testSuitePath}/functional-discovery.md`,
+          pagesDiscovered: 0, // No se explora de nuevo
+          formsDiscovered: 0,
+          suiteReady: true,
+          suiteTestCount,
+        };
+      }
+
+      // --- Primera vez: explorar app y generar discovery en testSuitePath ---
       const agent = appExplorerAgent;
 
-      const prompt = `Navega la aplicación en ${inputData.appUrl} y genera functional-discovery.md en ${inputData.certificationPath}.
+      const prompt = `Navega la aplicación en ${inputData.appUrl} y genera functional-discovery.md en ${inputData.testSuitePath}.
 
 URL: ${inputData.appUrl}
-Certification Path: ${inputData.certificationPath}
+Test Suite Path: ${inputData.testSuitePath}
 
 ${
   inputData.detectedStack
@@ -83,7 +141,7 @@ Ejecuta el flujo:
 2. browser_snapshot + browser_screenshot del estado inicial
 3. Explora la estructura sistematicamente
 4. Documenta todas las páginas, formularios y flujos encontrados
-5. Guarda functional-discovery.md en ${inputData.certificationPath} usando workspace write_file
+5. Guarda functional-discovery.md en ${inputData.testSuitePath} usando workspace write_file
 6. Retorna resumen JSON con: discoveryPath, pagesDiscovered, formsDiscovered
 
 Responde SOLO con JSON válido (sin markdown ni explicaciones).`;
@@ -115,9 +173,10 @@ Responde SOLO con JSON válido (sin markdown ni explicaciones).`;
 
       return {
         ...inputData,
-        discoveryPath: `${inputData.certificationPath}/functional-discovery.md`,
+        discoveryPath: `${inputData.testSuitePath}/functional-discovery.md`,
         pagesDiscovered: parsedResult.pagesDiscovered || 0,
         formsDiscovered: parsedResult.formsDiscovered || 0,
+        suiteReady: false,
       };
     } catch (error) {
       return {
@@ -137,10 +196,12 @@ Responde SOLO con JSON válido (sin markdown ni explicaciones).`;
 
 const createUserStoriesStep = createStep({
   id: 'create-user-stories',
-  description: 'Crea historias de usuario a partir del descubrimiento',
+  description: 'Crea historias de usuario a partir del descubrimiento y plan de QA',
   inputSchema: z.object({
     ...qaCertificationInputSchema.shape,
     discoveryPath: z.string().optional(),
+    suiteReady: z.boolean().optional(),
+    suiteTestCount: z.number().optional(),
     step1Error: z.string().optional(),
   }),
   outputSchema: z.object({
@@ -151,6 +212,8 @@ const createUserStoriesStep = createStep({
     storiesPath: z.string().optional(),
     totalStories: z.number().optional(),
     totalCriteria: z.number().optional(),
+    suiteReady: z.boolean().optional(),
+    suiteTestCount: z.number().optional(),
     step1Error: z.string().optional(),
     step2Error: z.string().optional(),
   }),
@@ -159,21 +222,32 @@ const createUserStoriesStep = createStep({
       return inputData;
     }
 
+    // --- Skip si la suite ya está lista ---
+    if (inputData.suiteReady) {
+      return {
+        ...inputData,
+        storiesPath: `${inputData.testSuitePath}/user-stories.md`,
+        totalStories: 0, // No se regeneran
+        totalCriteria: 0,
+      };
+    }
+
     try {
       const agent = userStoryCreatorAgent;
 
-      const prompt = `Crea historias de usuario a partir de ${inputData.discoveryPath}.
+      const prompt = `Crea historias de usuario a partir del descubrimiento y el plan de QA aprobado.
 
+QA Plan Path: ${inputData.qaPlanPath}
 Discovery Path: ${inputData.discoveryPath}
-Certification Path: ${inputData.certificationPath}
+Test Suite Path: ${inputData.testSuitePath}
 Test Mode: ${inputData.mode}
 
 Ejecuta el flujo:
-1. Usa workspace read_file para leer ${inputData.discoveryPath}
-2. Analiza el descubrimiento funcional
-3. Crea historias de usuario adaptadas al modo ${inputData.mode}
-4. Incluye criterios de aceptación verificables
-5. Guarda user-stories.md en ${inputData.certificationPath} usando workspace write_file
+1. Usa workspace read_file para leer ${inputData.qaPlanPath} PRIMERO — es el contrato aprobado por el humano y la FUENTE DE VERDAD
+2. Usa workspace read_file para leer ${inputData.discoveryPath} como complemento (rutas, selectores, estado real de la app)
+3. Crea historias de usuario que cubran TODOS los escenarios del plan para el modo ${inputData.mode}
+4. Incluye criterios de aceptación verificables basados en el plan
+5. Guarda user-stories.md en ${inputData.testSuitePath} usando workspace write_file
 6. Retorna resumen JSON con: storiesPath, totalStories, totalCriteria
 
 Responde SOLO con JSON válido (sin markdown).`;
@@ -205,7 +279,7 @@ Responde SOLO con JSON válido (sin markdown).`;
 
       return {
         ...inputData,
-        storiesPath: `${inputData.certificationPath}/user-stories.md`,
+        storiesPath: `${inputData.testSuitePath}/user-stories.md`,
         totalStories: parsedResult.totalStories || 0,
         totalCriteria: parsedResult.totalCriteria || 0,
       };
@@ -224,7 +298,7 @@ Responde SOLO con JSON válido (sin markdown).`;
 
 const designGherkinTestsStep = createStep({
   id: 'design-gherkin-tests',
-  description: 'Diseña test cases en formato Gherkin',
+  description: 'Diseña test cases en formato Gherkin basados en plan de QA',
   inputSchema: z.object({
     ...qaCertificationInputSchema.shape,
     discoveryPath: z.string().optional(),
@@ -233,6 +307,8 @@ const designGherkinTestsStep = createStep({
     storiesPath: z.string().optional(),
     totalStories: z.number().optional(),
     totalCriteria: z.number().optional(),
+    suiteReady: z.boolean().optional(),
+    suiteTestCount: z.number().optional(),
     step1Error: z.string().optional(),
     step2Error: z.string().optional(),
   }),
@@ -246,6 +322,8 @@ const designGherkinTestsStep = createStep({
     totalCriteria: z.number().optional(),
     testCasesPath: z.string().optional(),
     totalTestCases: z.number().optional(),
+    suiteReady: z.boolean().optional(),
+    suiteTestCount: z.number().optional(),
     step1Error: z.string().optional(),
     step2Error: z.string().optional(),
     step3Error: z.string().optional(),
@@ -255,23 +333,34 @@ const designGherkinTestsStep = createStep({
       return inputData;
     }
 
+    // --- Skip si la suite ya está lista ---
+    if (inputData.suiteReady) {
+      return {
+        ...inputData,
+        testCasesPath: `${inputData.testSuitePath}/test-cases`,
+        totalTestCases: inputData.suiteTestCount || 0,
+      };
+    }
+
     try {
       const agent = gherkinTestDesignerAgent;
 
-      const prompt = `Diseña test cases Gherkin a partir de ${inputData.storiesPath}.
+      const prompt = `Diseña test cases Gherkin a partir del plan de QA aprobado y las historias de usuario.
 
+QA Plan Path: ${inputData.qaPlanPath}
 Stories Path: ${inputData.storiesPath}
 App URL: ${inputData.appUrl}
-Certification Path: ${inputData.certificationPath}
+Test Suite Path: ${inputData.testSuitePath}
 Test Mode: ${inputData.mode}
 
 Ejecuta el flujo:
-1. Usa workspace read_file para leer ${inputData.storiesPath}
-2. Analiza cada historia de usuario
+1. Usa workspace read_file para leer ${inputData.qaPlanPath} PRIMERO — contiene los escenarios Given/When/Then aprobados
+2. Usa workspace read_file para leer ${inputData.storiesPath}
 3. Diseña test cases en formato Gherkin adaptados al modo ${inputData.mode}
-4. Crea carpeta ${inputData.certificationPath}/test-cases/ (usar workspace create_directory)
-5. Guarda cada TC como TC-{nn}-{descripcion}.md usando workspace write_file
-6. Retorna resumen JSON con: testCasesPath, totalTestCases
+4. Garantiza que CADA criterio de aceptación del plan tenga al menos un TC de cobertura
+5. Crea carpeta ${inputData.testSuitePath}/test-cases/ (usar workspace create_directory)
+6. Guarda cada TC como TC-{nn}-{descripcion}.md usando workspace write_file
+7. Retorna resumen JSON con: testCasesPath, totalTestCases
 
 Responde SOLO con JSON válido.`;
 
@@ -300,7 +389,7 @@ Responde SOLO con JSON válido.`;
 
       return {
         ...inputData,
-        testCasesPath: `${inputData.certificationPath}/test-cases`,
+        testCasesPath: `${inputData.testSuitePath}/test-cases`,
         totalTestCases: parsedResult.totalTestCases || 0,
       };
     } catch (error) {
@@ -476,6 +565,7 @@ const generateReportStep = createStep({
       const prompt = `Genera el reporte de certificación en ${inputData.certificationPath}.
 
 Certification Path: ${inputData.certificationPath}
+Test Suite Path: ${inputData.testSuitePath}
 Total Tests: ${inputData.totalTests || 0}
 Passed: ${inputData.passedCount || 0}
 Failed: ${inputData.failedCount || 0}
@@ -495,7 +585,7 @@ Ejecuta el flujo:
    - >= 50%: Regular
    - < 50%: Critico
 5. Compila lista de problemas encontrados (de test cases FAIL)
-6. Usa workspace read_file para leer ${inputData.certificationPath}/user-stories.md (si existe)
+6. Usa workspace read_file para leer ${inputData.testSuitePath}/user-stories.md (la suite estable)
 7. Genera Reporte-Certificacion.html usando template HTML profesional
 8. Guarda en ${inputData.certificationPath}/Reporte-Certificacion.html usando workspace write_file
 9. Retorna JSON: reportPath, maturityScore (número), maturityClassification (texto)
