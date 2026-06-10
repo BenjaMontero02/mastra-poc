@@ -11,6 +11,7 @@ import { codeSupervisorAgent } from '../agents/code-supervisor-agent';
 import { startApp } from './steps/start-app-step';
 import { teardownSandbox } from './steps/teardown-sandbox-step';
 import { createPullRequest } from './qa-certification-workflow';
+import { QUEUE_DIR, DONE_DIR, PLANS_DIR } from '../paths';
 
 /**
  * Pipeline principal de tareas (sandbox-only storage).
@@ -32,11 +33,6 @@ import { createPullRequest } from './qa-certification-workflow';
  */
 
 const MAX_ITERATIONS = 20;
-
-const PROJECT_ROOT = path.resolve(process.cwd(), '..');
-const QUEUE_DIR = path.join(PROJECT_ROOT, '.tasks', 'queue');
-const DONE_DIR = path.join(PROJECT_ROOT, '.tasks', 'done');
-const PLANS_DIR = path.join(PROJECT_ROOT, '.plans');
 
 // --- Helpers deterministas sobre el sandbox ---
 

@@ -2,11 +2,7 @@ import { createTool } from '@mastra/core/tools';
 import { z } from 'zod/v4';
 import fs from 'fs/promises';
 import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = path.resolve(__dirname, "..", '..', '..', '..');
-const QUEUE_DIR = path.join(PROJECT_ROOT, '.tasks', 'queue');
+import { QUEUE_DIR } from '../paths';
 
 export const writeTaskTool = createTool({
   id: 'task-queue-write',

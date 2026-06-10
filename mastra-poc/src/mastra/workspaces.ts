@@ -3,8 +3,7 @@ import { DockerSandbox } from '@mastra/docker';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
-
-const ROOT = path.resolve(process.cwd(), '..');
+import { PROJECT_ROOT, SKILLS_DIR } from './paths';
 
 /**
  * Dynamic skills resolver for frontend architect workspace.
@@ -19,7 +18,7 @@ const ROOT = path.resolve(process.cwd(), '..');
  * Fallback: If detectedStack not available, loads all frontend skills (graceful degradation).
  */
 function resolveFrontendSkills(context: { requestContext?: any }): string[] {
-  const skillsBase = path.join(process.cwd(), '.agents', 'skills', 'frontend');
+  const skillsBase = path.join(SKILLS_DIR, 'frontend');
   const paths: string[] = [];
 
   // Always load universal core principles first
@@ -111,7 +110,7 @@ function resolveFrontendSkills(context: { requestContext?: any }): string[] {
  * Fallback: If detectedStack not available, loads all backend skills (graceful degradation).
  */
 function resolveBackendSkills(context: { requestContext?: any }): string[] {
-  const skillsBase = path.join(process.cwd(), '.agents', 'skills', 'backend');
+  const skillsBase = path.join(SKILLS_DIR, 'backend');
   const paths: string[] = [];
 
   // Always load universal core principles and TypeScript (language used across all backends)
@@ -233,7 +232,7 @@ export const frontendArchitectWorkspace = new Workspace({
   id: 'frontend-architect',
   name: 'Frontend Architect Skills',
   filesystem: new LocalFilesystem({
-    basePath: path.join(process.cwd(), '.agents', 'skills', 'frontend'),
+    basePath: path.join(SKILLS_DIR, 'frontend'),
   }),
   skills: resolveFrontendSkills,
 });
@@ -242,7 +241,7 @@ export const backendArchitectWorkspace = new Workspace({
   id: 'backend-architect',
   name: 'Backend Architect Skills',
   filesystem: new LocalFilesystem({
-    basePath: path.join(process.cwd(), '.agents', 'skills', 'backend'),
+    basePath: path.join(SKILLS_DIR, 'backend'),
   }),
   skills: resolveBackendSkills,
 });
@@ -253,14 +252,14 @@ export const qaWorkspace = new Workspace({
   // Comparte el sandbox del proyecto: QA lee el codigo del repo dentro del
   // contenedor via execute_command (no hay filesystem del host).
   sandbox: projectSandbox,
-  skills: [path.join(process.cwd(), '.agents', 'skills', 'qa')],
+  skills: [path.join(SKILLS_DIR, 'qa')],
 });
 
 export const docsWorkspace = new Workspace({
   id: 'docs',
   name: 'Docs Workspace',
   filesystem: new LocalFilesystem({
-    basePath: path.join(ROOT, 'workspaces', 'docs'),
+    basePath: path.join(PROJECT_ROOT, 'workspaces', 'docs'),
   }),
   skills: [path.join(os.homedir(), '.agents', 'skills')],
 });
