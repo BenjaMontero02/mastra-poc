@@ -110,16 +110,23 @@ Lista verificable de condiciones para considerar la tarea completa:
 - **Separación clara**: cada plan debe ser independiente y auto-contenido.
 
 ## Formato final de salida
+Tu respuesta final DEBE seguir EXACTAMENTE esta estructura de headers (se parsea automáticamente por código; si cambiás los headers, el pipeline falla):
+
+## Resumen Ejecutivo
+[resumen de ambos planes, máximo 10 líneas]
 
 ## Plan de Código
 [contenido completo según estructura arriba]
 
----
-
 ## Plan de QA
-[contenido completo según estructura arriba]`,
+[contenido completo según estructura arriba]
+
+Reglas del formato:
+- Los tres headers \`## Resumen Ejecutivo\`, \`## Plan de Código\` y \`## Plan de QA\` deben aparecer una sola vez, en ese orden, al nivel \`##\`.
+- Dentro de cada plan usá solo headers de nivel \`###\` o inferior (nunca \`##\`).
+- No agregues texto después del Plan de QA.`,
   model: {
-    id: 'opencode-go/qwen3.7-plus',
+    id: 'opencode-go/deepseek-v4-pro',
   },
   defaultNetworkOptions: {
     maxSteps: 25,

@@ -110,6 +110,45 @@ const iterationStateSchema = z.object({
   codeSummary: z.string().optional(),
 });
 
+// --- Parser de planes ---
+
+/**
+ * Parsea la respuesta del plan-creator por headers fijos de nivel ##.
+ * Tolerante a acentos, mayúsculas y nivel de header (#, ## o ###).
+ * Devuelve null si falta alguno de los dos planes.
+ */
+function parsePlansFromText(text: string): { codePlan: string; qaPlan: string; summary: string } | null {
+  const findHeader = (pattern: RegExp, from = 0): number => {
+    const slice = text.slice(from);
+    const match = slice.match(pattern);
+    return match?.index === undefined ? -1 : from + match.index;
+  };
+
+  const codeStart = findHeader(/^#{1,3}\s*Plan de C[oó]digo\b.*$/im);
+  if (codeStart === -1) return null;
+  const qaStart = findHeader(/^#{1,3}\s*Plan de QA\b.*$/im, codeStart + 1);
+  if (qaStart === -1) return null;
+
+  const stripSeparators = (s: string) => s.replace(/^\s*-{3,}\s*$/gm, '').trim();
+
+  const codePlan = stripSeparators(text.slice(codeStart, qaStart));
+  const qaPlan = stripSeparators(text.slice(qaStart));
+  if (!codePlan || !qaPlan) return null;
+
+  // Resumen ejecutivo: lo que haya entre su header y el inicio del plan de codigo.
+  const summaryStart = findHeader(/^#{1,3}\s*Resumen Ejecutivo\b.*$/im);
+  let summary = '';
+  if (summaryStart !== -1 && summaryStart < codeStart) {
+    summary = stripSeparators(text.slice(summaryStart, codeStart).replace(/^#{1,3}\s*Resumen Ejecutivo\b.*$/im, ''));
+  }
+  if (!summary) {
+    // Fallback: primeras 10 lineas no vacias del plan de codigo.
+    summary = codePlan.split('\n').filter(l => l.trim()).slice(0, 10).join('\n');
+  }
+
+  return { codePlan, qaPlan, summary };
+}
+
 // --- Steps ---
 
 const gitSetup = createStep({
@@ -221,13 +260,12 @@ const createPlans = createStep({
     planSummary: z.string(),
   }),
   execute: async ({ inputData }) => {
-    const plansSchema = z.object({
-      codePlan: z.string().describe('Plan de implementacion completo en markdown'),
-      qaPlan: z.string().describe('Plan de QA completo en markdown'),
-      summary: z.string().describe('Resumen ejecutivo de ambos planes (max 10 lineas)'),
-    });
-
-    const result = await planCreatorAgent.generate(
+    // stream() (SSE) en lugar de generate(): el gateway del proveedor corta las
+    // respuestas no-streaming largas (~60s) con un 500; con streaming los bytes
+    // fluyen desde el primer token y la conexion no expira.
+    // Sin structuredOutput: re-emitir dos planes largos via un segundo LLM
+    // truncaba la salida. El agente emite headers fijos y se parsea por codigo.
+    const stream = await planCreatorAgent.stream(
       `${buildStackContext(inputData.detectedStack)}
 
 El repositorio esta clonado en ${inputData.repoPath} dentro del sandbox: explora su estructura con execute_command para que los planes referencien paths reales.
@@ -239,15 +277,17 @@ Genera el Plan de Codigo y el Plan de QA.`,
       {
         memory: { thread: `task-${inputData.filename}`, resource: 'task-pipeline' },
         maxSteps: 40,
-        structuredOutput: { schema: plansSchema, model: { id: 'opencode-go/qwen3.7-plus' } },
         requestContext: buildRequestContext(inputData.detectedStack),
         modelSettings: { maxRetries: 5 },
       },
     );
 
-    const plans = result.object;
-    if (!plans?.codePlan || !plans?.qaPlan) {
-      throw new Error('El plan-creator no devolvio los dos planes esperados');
+    const text = await stream.text;
+    const plans = parsePlansFromText(text);
+    if (!plans) {
+      throw new Error(
+        `El plan-creator no respeto el formato de salida (headers "## Plan de Código" / "## Plan de QA" no encontrados). Respuesta (primeros 500 chars): ${text.slice(0, 500)}`,
+      );
     }
 
     // Copia host (visibilidad para el humano en el HITL) y copia en el sandbox
