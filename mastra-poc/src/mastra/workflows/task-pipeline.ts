@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { detectedStackSchema } from '../schemas/detected-stack';
 import { projectSandbox } from '../workspaces';
+import { stackDetectorAgent } from '../agents/stack-detector-agent';
 import { planCreatorAgent } from '../agents/plan-creator-agent';
 import { codeSupervisorAgent } from '../agents/code-supervisor-agent';
 import { startApp } from './steps/start-app-step';
@@ -163,21 +164,8 @@ const detectStack = createStep({
   description: 'Detecta el stack tecnologico del repositorio desde AGENTS.md y manifiestos',
   inputSchema: z.object({ ...baseStateShape }),
   outputSchema: z.object({ ...baseStateShape, detectedStack: detectedStackSchema }),
-  execute: async ({ inputData, mastra }) => {
-    const agent = mastra?.getAgent('stackDetectorAgent');
-    if (!agent) throw new Error('stackDetectorAgent agent not found');
-
-    const result = await agent.generate(
-      `Detecta el stack del repo clonado en ${inputData.repoPath} (usa execute_command para leer AGENTS.md, package.json y otros manifiestos).
-Devolve SOLO el JSON del stack detectado (sin markdown, sin explicaciones).`,
-      {
-        memory: { thread: `task-${inputData.filename}`, resource: 'task-pipeline' },
-        maxSteps: 20,
-        structuredOutput: { schema: detectedStackSchema },
-      },
-    );
-
-    const detectedStack = result.object || {
+  execute: async ({ inputData }) => {
+    const stackFallback = {
       languages: [],
       frontend: null,
       backend: null,
@@ -186,7 +174,24 @@ Devolve SOLO el JSON del stack detectado (sin markdown, sin explicaciones).`,
       inferred: true,
     };
 
-    return { ...inputData, detectedStack };
+    try {
+      const result = await stackDetectorAgent.generate(
+        `Detecta el stack del repo clonado en ${inputData.repoPath}. Primero lista el contenido de la raíz (execute_command: ls -la) y lee SOLO los archivos que existan (AGENTS.md, package.json, pom.xml, requirements.txt, go.mod, docker-compose.yml, etc.). Si el repo solo tiene AGENTS.md, deriva todo el stack de ese archivo. Si el repo está vacío o no hay información suficiente, devuelve un stack mínimo con inferred: true y listas vacías. NUNCA consideres un error que falten manifiestos. Devuelve SOLO el JSON del stack detectado.`,
+        {
+          memory: { thread: `task-${inputData.filename}`, resource: 'task-pipeline' },
+          maxSteps: 20,
+          structuredOutput: { schema: detectedStackSchema },
+        },
+      );
+
+      const detectedStack = result.object || stackFallback;
+      return { ...inputData, detectedStack };
+    } catch (error) {
+      console.warn(
+        `[detect-stack] Error al detectar stack en ${inputData.repoPath}: ${error instanceof Error ? error.message : String(error)}. Usando fallback.`,
+      );
+      return { ...inputData, detectedStack: stackFallback };
+    }
   },
 });
 

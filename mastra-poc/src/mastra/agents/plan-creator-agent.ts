@@ -112,7 +112,7 @@ Lista verificable de condiciones para considerar la tarea completa:
 ## Plan de QA
 [contenido completo según estructura arriba]`,
   model: {
-    id: 'opencode-go/deepseek-v4-pro',
+    id: 'opencode-go/qwen3.7-plus',
   },
   defaultNetworkOptions: {
     maxSteps: 25,

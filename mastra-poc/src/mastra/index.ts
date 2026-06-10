@@ -11,6 +11,18 @@ import { qaCertificationWorkflow } from './workflows/qa-certification-workflow';
 import { parentSupervisorAgent } from './agents/parent-supervisor-agent';
 import { taskRefinerAgent } from './agents/task-refiner-agent';
 import { stackDetectorAgent } from './agents/stack-detector-agent';
+import { planCreatorAgent } from './agents/plan-creator-agent';
+import { codeSupervisorAgent } from './agents/code-supervisor-agent';
+import { qaSupervisorAgent } from './agents/qa-supervisor-agent';
+import { appExplorerAgent } from './agents/app-explorer-agent';
+import { userStoryCreatorAgent } from './agents/user-story-creator-agent';
+import { gherkinTestDesignerAgent } from './agents/gherkin-test-designer-agent';
+import { playwrightTestExecutorAgent } from './agents/playwright-test-executor-agent';
+import { executiveReporterAgent } from './agents/executive-reporter-agent';
+import { docWriterAgent } from './agents/doc-writer-agent';
+import { codeReviewerAgent } from './agents/code-reviewer-agent';
+import { frontendArchitectAgent } from './agents/frontend-architect-agent';
+import { backendArchitectAgent } from './agents/backend-architect-agent';
 import { queueTool, doneTool, plansTool } from './tools/tasks-tool';
 import { writeTaskTool } from './tools/write-task-tool';
 import { taskMemory } from './memory';
@@ -20,8 +32,6 @@ export const mastra = new Mastra({
   workflows: { taskPipelineWorkflow, qaCertificationWorkflow },
   agents: {
     parentSupervisorAgent,
-    taskRefinerAgent,
-    stackDetectorAgent,
   },
   tools: { queueTool, doneTool, plansTool, writeTaskTool },
   memory: { taskMemory },
@@ -62,3 +72,26 @@ mastra.addWorkspace(docsWorkspace);
 mastra.addWorkspace(frontendArchitectWorkspace);
 mastra.addWorkspace(backendArchitectWorkspace);
 mastra.addWorkspace(qaWorkspace);
+
+// Inyecta storage/logger/observability en agentes ocultos (no expuestos en el registro público).
+// Solo parentSupervisorAgent queda visible en playground/API.
+const hiddenAgents = [
+  taskRefinerAgent,
+  stackDetectorAgent,
+  planCreatorAgent,
+  codeSupervisorAgent,
+  qaSupervisorAgent,
+  appExplorerAgent,
+  userStoryCreatorAgent,
+  gherkinTestDesignerAgent,
+  playwrightTestExecutorAgent,
+  executiveReporterAgent,
+  docWriterAgent,
+  codeReviewerAgent,
+  frontendArchitectAgent,
+  backendArchitectAgent,
+];
+
+for (const agent of hiddenAgents) {
+  (agent as unknown as { __registerMastra(m: Mastra): void }).__registerMastra(mastra);
+}

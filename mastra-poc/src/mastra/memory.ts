@@ -32,7 +32,7 @@ export const taskMemory = new Memory({
       schema: taskLoopSchema,
     },
     observationalMemory: {
-      model: 'opencode-go/deepseek-v4-pro',
+      model: 'opencode-go/qwen3.7-plus',
       scope: 'thread',
     },
   },

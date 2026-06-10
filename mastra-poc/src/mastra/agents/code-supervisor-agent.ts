@@ -3,6 +3,7 @@ import { frontendArchitectAgent } from './frontend-architect-agent';
 import { backendArchitectAgent } from './backend-architect-agent';
 import { docWriterAgent } from './doc-writer-agent';
 import { projectWorkspace } from '../workspaces';
+import { taskMemory } from '../memory';
 
 export const codeSupervisorAgent = new Agent({
   id: 'code-supervisor',
@@ -123,6 +124,7 @@ Consolida todo en un resumen para el parent-supervisor. **CRUCIAL para el step s
     id: 'opencode-go/deepseek-v4-pro',
   },
   agents: { frontendArchitectAgent, backendArchitectAgent, docWriterAgent },
+  memory: taskMemory,
   defaultNetworkOptions: {
     maxSteps: 25,
   },

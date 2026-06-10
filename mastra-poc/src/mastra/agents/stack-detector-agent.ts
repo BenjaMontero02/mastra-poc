@@ -38,6 +38,16 @@ El archivo puede estar en cualquier formato (JSON, YAML, Markdown, plain text). 
 - **port**: Buscar en package.json (PORT=X en scripts o env), en AGENTS.md, o en código (ej: listen(3000))
 - **conventions**: Detectar linters/formatters/test frameworks (ESLint, Prettier, Jest, Playwright, Mocha, etc.) de package.json o AGENTS.md
 
+## Repos nuevos o vacíos
+Antes de leer cualquier archivo:
+1. Lista la raíz del repo (execute_command: ls -la)
+2. Lee ÚNICAMENTE los archivos que existan
+3. Un repo recién creado puede tener solo AGENTS.md (o estar completamente vacío) y eso es un caso VÁLIDO, no un error
+4. Si el repo está vacío o AGENTS.md es la única fuente, deriva el stack de AGENTS.md
+5. Si AGENTS.md tampoco existe o está vacío, devuelve el stack mínimo con inferred: true, languages: [], frontend: null, backend: null, runCommands: { compose: false }, conventions: []
+6. NUNCA responder con un error ni negarse a producir el JSON
+7. SIEMPRE devuelve un JSON válido, incluso si es el stack mínimo
+
 ## Marca inferred
 - inferred: false si los datos vinieron principalmente de AGENTS.md (más del 50% de información)
 - inferred: true si tuviste que inferir del proyecto sin AGENTS.md o AGENTS.md estaba muy vacío
