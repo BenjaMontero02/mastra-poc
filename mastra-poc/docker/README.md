@@ -46,7 +46,8 @@ docker rm -f $(docker ps -aq --filter name=mastra-task-sandbox)
 
 El navegador de QA siempre corre en un contenedor Chromium y se conecta via
 Chrome DevTools Protocol (CDP). El workflow levanta automáticamente el servicio
-via `ensure-qa-browser`, que ejecuta `docker compose up -d` con `docker/qa-browser.compose.yml`.
+via `ensure-qa-browser`, que gestiona programáticamente el contenedor Docker
+sin depender de archivos compose externos.
 
 ### Requisito previo: Docker Desktop
 
@@ -61,8 +62,12 @@ El servicio Browserless se levanta automáticamente en el puerto 9222:
 ws://localhost:9222
 ```
 
-Este es el endpoint CDP fijo usado por el browser de QA. La topología es:
-- Health-check: desde el HOST en `http://localhost:{app-port}` (fetch del host)
+Este es el endpoint CDP fijo usado por el browser de QA. El contenedor se gestiona
+directamente con Docker CLI (imagen `ghcr.io/browserless/chromium:latest`,
+puerto host 9222 → puerto contenedor 3000), sin necesidad de archivos compose.
+La topología es:
+- Health-check del browser: desde el HOST en `http://localhost:9222/json/version` (fetch del host)
+- Health-check de la app: desde el HOST en `http://localhost:{app-port}` (fetch del host)
 - appUrl (para browser QA): `http://host.docker.internal:{app-port}` (navegador en Docker)
 
 ## ⚠️ Seguridad: socket de Docker montado
