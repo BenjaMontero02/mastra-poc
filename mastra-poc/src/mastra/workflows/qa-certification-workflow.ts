@@ -7,6 +7,7 @@ import { gherkinTestDesignerAgent } from '../agents/gherkin-test-designer-agent'
 import { playwrightTestExecutorAgent } from '../agents/playwright-test-executor-agent';
 import { executiveReporterAgent } from '../agents/executive-reporter-agent';
 import { projectSandbox } from '../workspaces';
+import { ensureQaBrowser } from './steps/ensure-qa-browser';
 
 // --- Helper para generar HTML de evidencia determinísticamente ---
 
@@ -165,6 +166,20 @@ function deriveResourceId(resourceId?: string): string {
   return resourceId ? `project-${resourceId}` : 'qa-certification';
 }
 
+/**
+ * Watchdog contra cuelgues del agente o browser (unhandled rejections en agent-browser).
+ * Envuelve una promesa en Promise.race con un timeout que resuelve en error.
+ * Defensa contra: waitForNavigation huérfanas, browser crashes, LLM delays anormales.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms)
+    ),
+  ]);
+}
+
 // ===========================
 // SCHEMAS DE ENTRADA Y SALIDA
 // ===========================
@@ -232,6 +247,12 @@ const exploreAppStep = createStep({
   }),
   execute: async ({ inputData }) => {
     try {
+      // --- Ensure QA browser (CDP or local) is ready ---
+      const browserReady = await ensureQaBrowser();
+      if (!browserReady.ready) {
+        throw new Error(`QA browser not ready (${browserReady.mode}): ${browserReady.logs}`);
+      }
+
       // --- Check determinista: ¿existe suite ya generada? ---
 
       // Sanitizacion: testSuitePath llega como input del workflow (invocable
@@ -323,7 +344,8 @@ Responde SOLO con JSON válido (sin markdown ni explicaciones).`;
         maxSteps: 25,
         modelSettings: { maxRetries: 2 },
       });
-      const resultText = await stream.text;
+      // Watchdog: 8 min timeout against unhandled rejections (browser crashes, LLM hangs)
+      const resultText = await withTimeout(stream.text, 8 * 60_000, 'explore-app');
 
       let parsedResult = { pagesDiscovered: 0, formsDiscovered: 0 };
       try {
@@ -405,17 +427,26 @@ const createUserStoriesStep = createStep({
     try {
       const agent = userStoryCreatorAgent;
 
-      const prompt = `Crea historias de usuario a partir del descubrimiento y el plan de QA aprobado.
+      // Construir prompt condicionalmente: omitir referencia al discovery si no existe
+      let discoverySection = '';
+      if (inputData.discoveryPath && inputData.discoveryPath.trim()) {
+        discoverySection = `2. Usa workspace read_file para leer ${inputData.discoveryPath} como complemento (rutas, selectores, estado real de la app)
+`;
+      } else {
+        discoverySection = `2. No hay descubrimiento disponible. La fuente exclusiva es el plan de QA aprobado.
+`;
+      }
+
+      const prompt = `Crea historias de usuario a partir del plan de QA aprobado.
 
 QA Plan Path: ${inputData.qaPlanPath}
-Discovery Path: ${inputData.discoveryPath}
+${inputData.discoveryPath ? `Discovery Path: ${inputData.discoveryPath}` : ''}
 Test Suite Path: ${inputData.testSuitePath}
 Test Mode: ${inputData.mode}
 
 Ejecuta el flujo:
 1. Usa workspace read_file para leer ${inputData.qaPlanPath} PRIMERO — es el contrato aprobado por el humano y la FUENTE DE VERDAD
-2. Usa workspace read_file para leer ${inputData.discoveryPath} como complemento (rutas, selectores, estado real de la app)
-3. Crea historias de usuario que cubran TODOS los escenarios del plan para el modo ${inputData.mode}
+${discoverySection}3. Crea historias de usuario que cubran TODOS los escenarios del plan para el modo ${inputData.mode}
 4. Incluye criterios de aceptación verificables basados en el plan
 5. Guarda user-stories.md en ${inputData.testSuitePath} usando workspace write_file
 6. Retorna resumen JSON con: storiesPath, totalStories, totalCriteria
@@ -521,11 +552,14 @@ const designGherkinTestsStep = createStep({
     try {
       const agent = gherkinTestDesignerAgent;
 
+      // Construir prompt condicionalmente: omitir URL si está vacía
+      const appUrlSection = inputData.appUrl && inputData.appUrl.trim() ? `App URL: ${inputData.appUrl}` : '';
+
       const prompt = `Diseña test cases Gherkin a partir del plan de QA aprobado y las historias de usuario.
 
 QA Plan Path: ${inputData.qaPlanPath}
 Stories Path: ${inputData.storiesPath}
-App URL: ${inputData.appUrl}
+${appUrlSection}
 Test Suite Path: ${inputData.testSuitePath}
 Test Mode: ${inputData.mode}
 
@@ -741,7 +775,8 @@ Ejecuta el flujo:
             maxSteps: 10,
             modelSettings: { maxRetries: 2 },
           });
-          const resultText = await stream.text;
+          // Watchdog: 5 min timeout per TC against unhandled rejections (browser/LLM hangs)
+          const resultText = await withTimeout(stream.text, 5 * 60_000, `test-executor-${tcId}`);
 
           const htmlPath = `${inputData.certificationPath}/evidence/Evidencia-${tcId}.html`;
           let tcResult = {
@@ -1088,7 +1123,7 @@ const finalizeStep = createStep({
 });
 
 // ===========================
-// WORKFLOW PRINCIPAL
+// WORKFLOW PRINCIPAL: QA CERTIFICATION
 // ===========================
 
 export const qaCertificationWorkflow = createWorkflow({
@@ -1102,6 +1137,155 @@ export const qaCertificationWorkflow = createWorkflow({
   .then(executeTestsStep)
   .then(generateReportStep)
   .then(finalizeStep)
+  .commit();
+
+// ===========================
+// WORKFLOW: QA SUITE DESIGN (paralelo en iteración 1)
+// ===========================
+
+/**
+ * Output schema para el workflow de diseño de suite.
+ * Es simplificado: solo retorna testCasesPath y totalTestCases.
+ */
+export const qaSuiteDesignOutputSchema = z.object({
+  testCasesPath: z.string().describe('Ruta de la carpeta de test cases generada'),
+  totalTestCases: z.number().describe('Total de test cases diseñados'),
+  storiesPath: z.string().optional().describe('Ruta del archivo user-stories.md'),
+});
+
+/**
+ * Workflow de diseño paralelo de suite QA.
+ * Reutiliza createUserStoriesStep y designGherkinTestsStep sin exploración de app.
+ * Pensado para correr EN PARALELO con la implementación de código en la iteración 1.
+ *
+ * Flujo:
+ * 1. Check determinista: si ya existen TCs en testSuitePath/test-cases/, termina early (idempotencia)
+ * 2. createUserStoriesStep: genera user-stories.md desde qa-plan (sin discovery)
+ * 3. designGherkinTestsStep: genera TCs Gherkin desde plan + stories (sin app URL)
+ */
+export const qaSuiteDesignWorkflow = createWorkflow({
+  id: 'qa-suite-design',
+  inputSchema: qaCertificationInputSchema,
+  outputSchema: qaSuiteDesignOutputSchema,
+})
+  .then(
+    createStep({
+      id: 'check-suite-ready',
+      description: 'Check determinista: si ya existen TCs, termina early (idempotencia)',
+      inputSchema: qaCertificationInputSchema,
+      outputSchema: z.object({
+        ...qaCertificationInputSchema.shape,
+        suiteReady: z.boolean().optional(),
+        suiteTestCount: z.number().optional(),
+        discoveryPath: z.string().optional(),
+        step1Error: z.string().optional(),
+      }),
+      execute: async ({ inputData }) => {
+        try {
+          // Sanitizacion: testSuitePath se usa en comandos shell
+          if (
+            !/^[A-Za-z0-9._/-]+$/.test(inputData.testSuitePath) ||
+            !inputData.testSuitePath.startsWith('/workspace/') ||
+            inputData.testSuitePath.includes('..')
+          ) {
+            throw new Error(`testSuitePath invalido o fuera de /workspace: ${inputData.testSuitePath}`);
+          }
+
+          // Contar test cases existentes en la suite
+          let suiteTestCount = 0;
+          if (projectSandbox.executeCommand) {
+            try {
+              const listResult = await projectSandbox.executeCommand('sh', [
+                '-c',
+                'ls -- "$1"/test-cases/TC-*.md 2>/dev/null | wc -l',
+                'sh',
+                inputData.testSuitePath,
+              ]);
+              suiteTestCount = listResult.success
+                ? parseInt(listResult.stdout?.trim() || '0', 10)
+                : 0;
+            } catch {
+              suiteTestCount = 0;
+            }
+          }
+
+          // Si hay TCs existentes, la suite está lista: retornar sin generar
+          if (suiteTestCount > 0) {
+            return {
+              ...inputData,
+              discoveryPath: '', // No hay discovery en diseño paralelo
+              suiteReady: true,
+              suiteTestCount,
+              step1Error: undefined,
+            };
+          }
+
+          // Suite no existe aún, continuar con generación
+          return {
+            ...inputData,
+            discoveryPath: '', // Sin exploración de app en diseño paralelo
+            suiteReady: false,
+            step1Error: undefined,
+          };
+        } catch (error) {
+          return {
+            ...inputData,
+            discoveryPath: '',
+            suiteReady: false,
+            step1Error: String(error),
+          };
+        }
+      },
+    })
+  )
+  .then(createUserStoriesStep)
+  .then(designGherkinTestsStep)
+  .then(
+    createStep({
+      id: 'finalize-suite-design',
+      description: 'Compila resultado final del diseño de suite',
+      inputSchema: z.object({
+        ...qaCertificationInputSchema.shape,
+        suiteReady: z.boolean().optional(),
+        suiteTestCount: z.number().optional(),
+        storiesPath: z.string().optional(),
+        totalStories: z.number().optional(),
+        totalCriteria: z.number().optional(),
+        testCasesPath: z.string().optional(),
+        totalTestCases: z.number().optional(),
+        step1Error: z.string().optional(),
+        step2Error: z.string().optional(),
+        step3Error: z.string().optional(),
+      }),
+      outputSchema: qaSuiteDesignOutputSchema,
+      execute: async ({ inputData }) => {
+        // Si algún step falló, retornar error con defaults
+        if (inputData.step1Error || inputData.step2Error || inputData.step3Error) {
+          return {
+            testCasesPath: '',
+            totalTestCases: 0,
+            storiesPath: '',
+          };
+        }
+
+        // Si la suite estaba lista (check-suite-ready encontró TCs), usar count conocido
+        if (inputData.suiteReady && inputData.suiteTestCount) {
+          return {
+            testCasesPath: `${inputData.testSuitePath}/test-cases`,
+            totalTestCases: inputData.suiteTestCount,
+            storiesPath: `${inputData.testSuitePath}/user-stories.md`,
+          };
+        }
+
+        // Suite se generó en esta corrida
+        return {
+          testCasesPath: inputData.testCasesPath || `${inputData.testSuitePath}/test-cases`,
+          totalTestCases: inputData.totalTestCases || 0,
+          storiesPath: inputData.storiesPath || `${inputData.testSuitePath}/user-stories.md`,
+        };
+      },
+    })
+  )
   .commit();
 
 // ===========================

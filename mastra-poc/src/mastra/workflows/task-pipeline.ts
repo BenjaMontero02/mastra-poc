@@ -474,6 +474,14 @@ ${inputData.appUrl ? `La app corria en ${inputData.appUrl}.` : 'ATENCION: la app
 
 Corregi UNICAMENTE lo necesario para que esos tests pasen. Commit local (NO push).`;
 
+    // Iteración 1: el diseño de la suite QA (stories + gherkin) corre EN PARALELO con la
+    // implementación: ambos derivan del qa-plan aprobado, no hace falta la app viva.
+    // qa-certification encontrará la suite lista (suiteReady) y salteará explore/stories/
+    // gherkin; si el diseño falla, la regenera él mismo (fallback natural).
+    let suiteDesignResult: { testCasesPath: string; totalTestCases: number; storiesPath?: string } | null = null;
+    let suiteDesignNotes = '';
+    const suiteDesignPromise = isFirstIteration ? runQASuiteDesignWorkflow() : Promise.resolve(null);
+
     // stream() evita el 500 del gateway en respuestas largas (ver create-plans)
     const codeStream = await codeSupervisorAgent.stream(codePrompt, {
       memory: { thread: codeThread, resource: `project-${inputData.repoSlug}` },
@@ -482,6 +490,16 @@ Corregi UNICAMENTE lo necesario para que esos tests pasen. Commit local (NO push
       modelSettings: { maxRetries: 5 },
     });
     const codeText = await codeStream.text;
+
+    // Esperar el diseño de suite paralelo antes del commit de seguridad,
+    // así los TCs generados quedan incluidos en el commit de cierre de iteración.
+    suiteDesignResult = await suiteDesignPromise;
+    if (isFirstIteration) {
+      suiteDesignNotes =
+        suiteDesignResult && suiteDesignResult.totalTestCases > 0
+          ? ` [Suite diseñada en paralelo con el código: ${suiteDesignResult.totalTestCases} TCs]`
+          : ' [El diseño de suite en paralelo no generó TCs; qa-certification la regenerará]';
+    }
 
     // Red de seguridad: commit de cualquier cambio que el supervisor no commiteo.
     await sandboxExec(
@@ -504,6 +522,7 @@ Corregi UNICAMENTE lo necesario para que esos tests pasen. Commit local (NO push
     }
 
     // --- Fase 3: certificacion QA (sub-workflow con re-test selectivo) ---
+
     // Helper: invocar el workflow QA con parametros dados
     async function runQAWorkflow(
       certPath: string,
@@ -552,6 +571,53 @@ Corregi UNICAMENTE lo necesario para que esos tests pasen. Commit local (NO push
           };
     }
 
+    // Helper: invocar el workflow de diseño de suite (iteración 1)
+    async function runQASuiteDesignWorkflow(): Promise<{
+      testCasesPath: string;
+      totalTestCases: number;
+      storiesPath?: string;
+    } | null> {
+      try {
+        const suiteWorkflow = mastra?.getWorkflowById('qa-suite-design');
+        if (!suiteWorkflow) {
+          console.warn('[qa-suite-design] Workflow no encontrado; saltando diseño paralelo');
+          return null;
+        }
+
+        const run = await suiteWorkflow.createRun();
+        const suiteRun = await run.start({
+          inputData: {
+            appUrl: '', // Vacío: diseño sin exploración de app
+            qaPlanPath: `${inputData.repoPath}/.qa/qa-plan.md`,
+            certificationPath: `${inputData.repoPath}/.qa/suite-design`,
+            testSuitePath: `${inputData.repoPath}/.qa/test-suite`,
+            regenerateSuite: false,
+            mode: 'positivos',
+            taskId: inputData.taskId,
+            branch: inputData.branch,
+            repoUrl: inputData.repoUrl,
+            detectedStack: inputData.detectedStack,
+            executionId: inputData.executionId,
+            iteration,
+            resourceId: inputData.repoSlug,
+          },
+          requestContext,
+        } as never);
+
+        if ((suiteRun as { status?: string; result?: any }).status === 'success' && (suiteRun as { result?: any }).result) {
+          return (suiteRun as { result: any }).result;
+        } else {
+          console.warn(`[qa-suite-design] Workflow termino con status ${(suiteRun as { status?: string }).status}; fallback a qa-certification`);
+          return null;
+        }
+      } catch (error) {
+        console.warn(
+          `[qa-suite-design] Error durante diseño paralelo (non-fatal): ${error instanceof Error ? error.message : String(error)}. Fallback a qa-certification.`
+        );
+        return null;
+      }
+    }
+
     // Calcular IDs de tests fallidos re-testeables (excluir pseudo-ids como 'startup')
     const retryIds =
       iteration >= 2 && (inputData.failedTests ?? []).length > 0
@@ -570,17 +636,16 @@ Corregi UNICAMENTE lo necesario para que esos tests pasen. Commit local (NO push
     };
 
     try {
-      // Corrida parcial si hay TCs fallidos re-testeables; si no, corrida completa.
-      // CAMBIO: NO re-ejecutar suite completa si la parcial pasa.
-      // En su lugar, usar agregacion de resultados (knownResults) para certificar
-      // por acumulacion de resultados conocidos.
       if (retryIds.length > 0) {
+        // Iteración >= 2 con TCs re-testeables: corrida parcial (la certificación
+        // final se construye por agregación en knownResults)
         qa = await runQAWorkflow(
           `${inputData.repoPath}/.qa/cert-iter-${iteration}`,
           retryIds,
         );
       } else {
-        // Corrida completa (primera iteracion o sin fallidos re-testeables)
+        // Corrida completa: iteración 1 (la suite ya se diseñó en paralelo con el
+        // código en la Fase 1) o sin TCs fallidos re-testeables
         qa = await runQAWorkflow(
           `${inputData.repoPath}/.qa/cert-iter-${iteration}`,
         );
@@ -594,6 +659,11 @@ Corregi UNICAMENTE lo necesario para que esos tests pasen. Commit local (NO push
         reportPath: '',
         notes: 'Excepcion al ejecutar el sub-workflow de certificacion.',
       };
+    }
+
+    // Adjuntar notas de suite design si aplica
+    if (suiteDesignNotes) {
+      qa.notes += suiteDesignNotes;
     }
 
     // --- Agregacion de resultados (knownResults) ---

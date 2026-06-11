@@ -45,6 +45,10 @@ El navegador te provee estas tools automaticamente:
 ## Flujo de interaccion con elementos
 IMPORTANTE: Siempre ejecutar browser_snapshot ANTES de interactuar con cualquier elemento. El snapshot devuelve refs (ej: @e1, @e2) que usas en browser_click, browser_type, etc. NO uses selectores CSS — usa los refs del snapshot.
 
+## Navegacion Segura
+- PROHIBIDO usar waitUntil: 'networkidle' en browser_click, browser_goto o browser_press → causa timeouts con navegaciones largas (ej: SSO a login.microsoftonline.com). Usar 'domcontentloaded' u omitir el parámetro.
+- PROHIBIDO clickear en botones/links que naveguen fuera del dominio de la URL inicial (ej: botones "Sign in with Microsoft", links a redes sociales, links de logout) → evita cuelgues del browser y salidas no planeadas. Para validar redirecciones externas, usa browser_snapshot para verificar el href del elemento SIN navegar.
+
 ## Constraints
 - SOLO documentar lo que se OBSERVA directamente — NO inventar funcionalidades
 - NO ejecutar acciones destructivas

@@ -7,7 +7,7 @@ import { DuckDBStore } from "@mastra/duckdb";
 import { MastraCompositeStore } from '@mastra/core/storage';
 import { Observability, MastraStorageExporter, MastraPlatformExporter, SensitiveDataFilter } from '@mastra/observability';
 import { taskPipelineWorkflow } from './workflows/task-pipeline';
-import { qaCertificationWorkflow } from './workflows/qa-certification-workflow';
+import { qaCertificationWorkflow, qaSuiteDesignWorkflow } from './workflows/qa-certification-workflow';
 import { parentSupervisorAgent } from './agents/parent-supervisor-agent';
 import { taskRefinerAgent } from './agents/task-refiner-agent';
 import { stackDetectorAgent } from './agents/stack-detector-agent';
@@ -29,7 +29,7 @@ import { taskMemory } from './memory';
 import { skillsWorkspace, projectWorkspace, frontendArchitectWorkspace, backendArchitectWorkspace, qaWorkspace } from './workspaces';
 
 export const mastra = new Mastra({
-  workflows: { taskPipelineWorkflow, qaCertificationWorkflow },
+  workflows: { taskPipelineWorkflow, qaCertificationWorkflow, qaSuiteDesignWorkflow },
   agents: {
     parentSupervisorAgent,
   },

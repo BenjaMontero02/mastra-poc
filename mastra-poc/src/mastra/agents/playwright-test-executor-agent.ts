@@ -61,6 +61,10 @@ El navegador te provee estas tools automaticamente:
   ]
 }
 
+## Navegacion Segura
+- PROHIBIDO usar waitUntil: 'networkidle' en browser_click, browser_goto o browser_press → causa timeouts con navegaciones largas (ej: SSO a login.microsoftonline.com). Usar 'domcontentloaded' o omitir el parámetro.
+- PROHIBIDO clickear en botones/links que naveguen fuera del dominio de appUrl (ej: botones "Sign in with Microsoft", links a redes sociales, etc.) → evita cuelgues del browser. Para validar redirecciones externas, usa browser_snapshot para verificar el href del elemento SIN navegar.
+
 ## Constraints
 - Ejecutar TODOS los pasos del test case (máx 10 pasos, cortá si hay más)
 - Capturar screenshot en CADA paso con capture_evidence_screenshot
