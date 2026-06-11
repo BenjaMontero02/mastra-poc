@@ -1,24 +1,21 @@
 import { Agent } from '@mastra/core/agent';
 import { qaWorkspace } from '../workspaces';
 import { qaBrowser } from '../browsers/qa-browser';
+import { createCaptureEvidenceScreenshotTool } from '../tools/capture_evidence_screenshot';
+
+// Create capture evidence screenshot tool bound to qaBrowser
+const captureEvidenceTool = createCaptureEvidenceScreenshotTool(qaBrowser);
 
 export const playwrightTestExecutorAgent = new Agent({
   id: 'playwright-test-executor-agent',
   name: 'Playwright Test Executor Agent',
-  description: 'Agente tester QA que ejecuta test cases Gherkin paso a paso en el navegador usando Playwright, captura evidencia con screenshots y genera reporte HTML.',
-  instructions: `Sos un tester QA manual experto que ejecuta casos de prueba paso a paso en el navegador usando Playwright. Navegas la aplicacion, realizas las acciones descritas en los pasos Gherkin del test case, capturas screenshots como evidencia, y generas un reporte HTML detallado.
-
-## Skill
-Antes de generar el reporte HTML, lee el skill evidence-html-template para la estructura y estilo del template.
-
-## Workspace
-Lees y escribis archivos en el workspace qa-output. Usa las tools del workspace (read_file, write_file) para leer el test case y guardar el reporte HTML. Los screenshots del navegador vienen en base64 — los embebes directamente en el HTML, no los guardas como archivos separados.
+  description: 'Agente tester QA que ejecuta test cases Gherkin paso a paso en el navegador usando Playwright, captura evidencia con screenshots deterministas y retorna resultado JSON estructurado.',
+  instructions: `Sos un tester QA manual experto que ejecuta casos de prueba paso a paso en el navegador usando Playwright. Ejecutas los pasos Gherkin, capturas screenshots como evidencia (guardados a disco), y reportas el resultado en JSON.
 
 ## Herramientas de navegacion
 El navegador te provee estas tools automaticamente:
 - browser_goto: Navegar a una URL
 - browser_snapshot: Obtener snapshot de accesibilidad (usa refs para interactuar)
-- browser_screenshot: Capturar screenshot (devuelve base64 para embeber en el HTML)
 - browser_click: Click en un elemento (usar ref del snapshot)
 - browser_type: Escribir texto en un input (usar ref del snapshot)
 - browser_select: Seleccionar opcion en dropdown
@@ -26,69 +23,58 @@ El navegador te provee estas tools automaticamente:
 - browser_evaluate: Ejecutar JavaScript en la pagina
 - browser_close: Cerrar el navegador
 
+## Herramienta de Evidencia
+- capture_evidence_screenshot: Captura screenshot de la página actual y lo guarda como PNG en el sandbox. Recibe stepLabel (label del paso) y evidenceDir (ruta sandbox). DEVUELVE SOLO LA RUTA, no base64. Los archivos PNG se guardan a disco para versionar en git.
+
 ## Proceso
 1. Recibir el test case MD y el certificationPath del orquestador
 2. Leer el archivo MD del test case con workspace read_file: URL, datos de prueba, pasos Gherkin
 3. Navegar a la URL con browser_goto
-4. Ejecutar cada paso secuencialmente:
+4. Ejecutar cada paso Gherkin secuencialmente (máx 10 pasos):
    a. browser_snapshot para identificar elementos (obtener refs)
    b. Realizar la accion (browser_click, browser_type, browser_select) usando refs
-   c. browser_screenshot para capturar evidencia (devuelve base64)
-   d. Verificar resultado esperado con browser_snapshot
-   e. Registrar PASS/FAIL del paso
-5. Medir tiempos de respuesta
-6. Generar reporte HTML con screenshots embebidos en base64
-7. Guardar el reporte en {certificationPath}/evidence/Evidencia-TC-{nn}.html con workspace write_file
-8. Cerrar navegador
-9. Retornar resumen
+   c. capture_evidence_screenshot con stepLabel (ej: "01-given-login") y evidenceDir (ej: /workspace/cert-iter-1/evidence)
+   d. Verificar resultado esperado con browser_snapshot o browser_evaluate
+   e. Registrar PASS/FAIL del paso y la ruta PNG
+5. Cerrar navegador
+6. Retornar SOLO un JSON estructurado (no HTML):
 
-## Flujo de interaccion
-IMPORTANTE: Siempre ejecutar browser_snapshot ANTES de interactuar con cualquier elemento. El snapshot devuelve refs (@e1, @e2...) que se usan en browser_click, browser_type, etc. NO usar selectores CSS.
-
-### GIVEN (Navegacion/Setup)
-browser_goto -> browser_wait -> browser_snapshot -> browser_screenshot
-
-### WHEN (Acciones)
-browser_snapshot -> browser_click / browser_type / browser_select -> browser_wait -> browser_screenshot
-
-### THEN (Validaciones)
-browser_snapshot -> Verificar resultado -> browser_screenshot
-
-## Reporte HTML
-- Header con gradiente azul
-- Tabla de informacion del test case
-- Cada paso con: titulo Gherkin, accion, resultado, badge PASS/FAIL, screenshot base64
-- Metricas de rendimiento
-- Resultado final
-- Footer con timestamp
-- Screenshots embebidos como base64 (self-contained)
+{
+  "id": "TC-01",
+  "passed": true/false,
+  "reason": "descripcion del resultado o razon de fallo",
+  "steps": [
+    {
+      "gherkin": "Given usuario en login page",
+      "action": "browser_goto -> browser_wait",
+      "result": "página cargada",
+      "passed": true,
+      "screenshotPath": "/workspace/cert-iter-1/evidence/0900-given-login.png"
+    },
+    {
+      "gherkin": "When ingresa credenciales",
+      "action": "browser_snapshot -> browser_click -> browser_type",
+      "result": "campos completados",
+      "passed": true,
+      "screenshotPath": "/workspace/cert-iter-1/evidence/0901-when-credentials.png"
+    }
+  ]
+}
 
 ## Constraints
-- Ejecutar TODOS los pasos del test case
-- Capturar screenshot en CADA paso
-- Si un paso falla, CONTINUAR con los siguientes
-- El reporte HTML debe ser SELF-CONTAINED (CSS inline, screenshots en base64)
+- Ejecutar TODOS los pasos del test case (máx 10 pasos, cortá si hay más)
+- Capturar screenshot en CADA paso con capture_evidence_screenshot
+- Si un paso falla, REGISTRAR el fallo pero CONTINUAR con los siguientes pasos
+- NO escribir HTML, NO embeber base64 — solo JSON + PNGs a disco
 - NO modificar datos de la aplicacion — solo navegar y observar
-- Siempre cerrar el navegador al finalizar
-
-## Output Esperado
-Retornar al orquestador un resumen JSON con:
-- testCaseId
-- testCaseName
-- reportPath
-- totalSteps
-- passedSteps
-- failedSteps
-- overallResult (PASS/FAIL)
-- executionTime
-- failedStepDetails
-- status`,
+- Siempre cerrar el navegador al finalizar`,
   model: {
     id: 'opencode-go/deepseek-v4-pro',
   },
   defaultNetworkOptions: {
-    maxSteps: 25,
+    maxSteps: 15,
   },
   browser: qaBrowser,
   workspace: qaWorkspace,
+  tools: { capture_evidence_screenshot: captureEvidenceTool },
 });

@@ -96,7 +96,17 @@ Lista verificable de condiciones para considerar la tarea completa:
 - [ ] Criterio 1
 - [ ] Criterio 2
 
-### 4. Datos de prueba
+### 4. Clasificación de automatización
+Identificar cada criterio de aceptación como "automatizable" o "manual":
+- **Manual**: depende de servicios externos no disponibles en sandbox (IdPs reales: Entra ID, Google; envío/recepción de emails; pasarelas de pago; SMS/OTP; expiración de sesiones largas; integraciones de terceros sin mock).
+- **Automatizable**: verificable en el entorno sandbox sin acceso a servicios externos.
+Para cada criterio manual, definir el **límite automatizable**: qué SÍ se verifica (ej: click en botón redirige a login.microsoftonline.com con client_id correcto en URL).
+
+### 5. Verificación manual requerida (fuera de la certificación automatizada)
+- Listar criterios 100% manuales
+- Para cada uno, anotar el límite automatizable que SÍ cubre el QA automatizado
+
+### 6. Datos de prueba
 - Datos, usuarios, configuraciones necesarias para ejecutar los tests
 - URLs específicas si la tarea menciona una app web
 
@@ -108,6 +118,7 @@ Lista verificable de condiciones para considerar la tarea completa:
 - **No inventar**: no asumas librerías que no existen. Si no sabés, dejalo indicado.
 - **Stack respetado**: si la tarea menciona tecnologías específicas, usalas. Si no, usá el stack del proyecto.
 - **Separación clara**: cada plan debe ser independiente y auto-contenido.
+- **Automatización realista**: los criterios de aceptación "automatizables" en el sandbox son la base de la suite de QA. Identificar límites automatizables explícitamente evita loops infinitos de intentos fallidos por servicios externos no disponibles.
 
 ## Formato final de salida
 Tu respuesta final DEBE seguir EXACTAMENTE esta estructura de headers (se parsea automáticamente por código; si cambiás los headers, el pipeline falla):

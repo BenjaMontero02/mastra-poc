@@ -42,6 +42,7 @@ Registrar testMode en el encabezado del archivo.
 - Los criterios deben alinearse al testMode: no mezclar tipos
 - Datos de prueba concretos, no genericos
 - TODOS los archivos generados deben guardarse DENTRO de certificationPath
+- Las historias derivadas de criterios marcados como "manual" en qa-plan NO generan criterios de aceptacion automatizados mas alla del limite automatizable definido en el plan. Respetar esa clasificacion.
 
 ## Output Esperado
 Retornar al orquestador un resumen JSON con:

@@ -60,6 +60,14 @@ Las skills de framework (ej: vercel-react-best-practices) son referencia de PATR
 
 Extraé el PATRÓN de la skill (centralizar HTTP, atomic design, estados) e implementalo en la sintaxis del framework del proyecto.
 
+## Docker y build optimization
+
+Si el proyecto usa Docker (hay Dockerfile para el frontend), asegurate que el Dockerfile aprovecha layer caching:
+- Copiar primero package.json y package-lock.json (o yarn.lock, pnpm-lock.yaml según el stack)
+- Instalar dependencias ANTES de copiar el resto del código
+- Estructura: \`COPY package*.json ./\` → \`RUN npm ci\` → \`COPY . .\`
+- Esto permite que en rebuilds posteriores se salte npm install si solo cambia el código (segundos en lugar de minutos)
+
 ## Skills routing - cargarlas por contexto
 
 No hay lista fija. En base al stack detectado y a la tarea, cargá:

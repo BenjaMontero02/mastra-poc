@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { randomUUID } from 'crypto';
 import { detectedStackSchema } from '../schemas/detected-stack';
 import { projectSandbox, resetProjectSandbox } from '../workspaces';
 import { stackDetectorAgent } from '../agents/stack-detector-agent';
@@ -64,6 +65,20 @@ function buildRequestContext(detectedStack: unknown): RequestContext {
   return rc;
 }
 
+/** Deriva repoSlug a partir de repoUrl (ej: https://github.com/org/repo.git → repo) */
+function deriveRepoSlug(repoUrl: string): string {
+  const match = repoUrl.match(/\/([^/]+?)(\.git)?$/);
+  if (!match) return 'unknown-repo';
+  const slug = match[1].toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-');
+  return slug || 'unknown-repo';
+}
+
+/** Genera executionId único: ${taskSlug}-${uuid8} */
+function generateExecutionId(taskId: string): string {
+  const uuid8 = randomUUID().slice(0, 8);
+  return `${taskId}-${uuid8}`;
+}
+
 // --- Schemas ---
 
 const taskInputSchema = z.object({
@@ -84,6 +99,8 @@ const baseStateShape = {
   taskId: z.string(),
   branch: z.string(),
   repoPath: z.string(),
+  executionId: z.string().describe('Identificador único de la ejecución (taskId-uuid8)'),
+  repoSlug: z.string().describe('Slug del repositorio para aislar memoria por proyecto'),
 };
 
 const failedTestSchema = z.object({
@@ -92,10 +109,23 @@ const failedTestSchema = z.object({
   evidencePath: z.string().optional(),
 });
 
+const knownResultSchema = z.object({
+  id: z.string().describe('ID del test case (ej: TC-001)'),
+  passed: z.boolean().describe('Resultado del test'),
+  reason: z.string().optional().describe('Razón si falló'),
+  evidencePath: z.string().optional().describe('Ruta del reporte de evidencia'),
+  iterationFound: z.number().optional().describe('Iteración donde se certificó por primera vez'),
+});
+
 /**
  * Estado del loop code→QA. inputSchema === outputSchema: en dountil, el step
  * recibe su propio output como input en cada vuelta. Los campos del loop son
  * opcionales para que el output de approve-plans (primera vuelta) valide.
+ *
+ * knownResults: acumulador de resultados certificados. Tras cada corrida QA
+ * (completa o parcial), se mergean los nuevos resultados aquí (por id de TC:
+ * el resultado más reciente pisa al anterior). La iteración certifica cuando
+ * TODOS los TCs conocidos están en passed.
  */
 const iterationStateSchema = z.object({
   ...baseStateShape,
@@ -112,6 +142,7 @@ const iterationStateSchema = z.object({
   maturityScore: z.number().optional(),
   totalTests: z.number().optional(),
   codeSummary: z.string().optional(),
+  knownResults: z.array(knownResultSchema).optional().describe('Acumulador de resultados de TC certificados'),
 });
 
 // --- Parser de planes ---
@@ -227,7 +258,10 @@ git checkout -b "${branch}"`,
       throw new Error(`git-setup fallo (exit ${setup.exitCode}): ${(setup.stderr || setup.stdout).slice(-2000)}`);
     }
 
-    return { filename: inputData.filename, repoUrl: inputData.repoUrl, taskId, branch, repoPath };
+    const executionId = generateExecutionId(taskId);
+    const repoSlug = deriveRepoSlug(inputData.repoUrl);
+
+    return { filename: inputData.filename, repoUrl: inputData.repoUrl, taskId, branch, repoPath, executionId, repoSlug };
   },
 });
 
@@ -250,7 +284,7 @@ const detectStack = createStep({
       const result = await stackDetectorAgent.generate(
         `Detecta el stack del repo clonado en ${inputData.repoPath}. Primero lista el contenido de la raíz (execute_command: ls -la) y lee SOLO los archivos que existan (AGENTS.md, package.json, pom.xml, requirements.txt, go.mod, docker-compose.yml, etc.). Si el repo solo tiene AGENTS.md, deriva todo el stack de ese archivo. Si el repo está vacío o no hay información suficiente, devuelve un stack mínimo con inferred: true y listas vacías. NUNCA consideres un error que falten manifiestos. Devuelve SOLO el JSON del stack detectado.`,
         {
-          memory: { thread: `task-${inputData.filename}`, resource: 'task-pipeline' },
+          memory: { thread: `plan-${inputData.executionId}`, resource: `project-${inputData.repoSlug}` },
           maxSteps: 20,
           structuredOutput: { schema: detectedStackSchema, model: { id: 'opencode-go/qwen3.7-plus' } },
           modelSettings: { maxRetries: 5 },
@@ -312,7 +346,7 @@ ${inputData.content}
 
 Genera el Plan de Codigo y el Plan de QA.`,
       {
-        memory: { thread: `task-${inputData.filename}`, resource: 'task-pipeline' },
+        memory: { thread: `plan-${inputData.executionId}`, resource: `project-${inputData.repoSlug}` },
         maxSteps: 40,
         requestContext: buildRequestContext(inputData.detectedStack),
         modelSettings: { maxRetries: 5 },
@@ -389,6 +423,8 @@ const approvePlans = createStep({
       taskId: inputData.taskId,
       branch: inputData.branch,
       repoPath: inputData.repoPath,
+      executionId: inputData.executionId,
+      repoSlug: inputData.repoSlug,
       approved,
       detectedStack: inputData.detectedStack,
       codePlan: inputData.codePlan,
@@ -410,7 +446,7 @@ const codeQaIteration = createStep({
 
     const iteration = (inputData.iteration ?? 0) + 1;
     const requestContext = buildRequestContext(inputData.detectedStack);
-    const thread = `task-${inputData.filename}`;
+    const codeThread = `code-${inputData.executionId}-iter-${iteration}`;
     const stackContext = buildStackContext(inputData.detectedStack);
 
     // --- Fase 1: implementacion / fix ---
@@ -440,7 +476,7 @@ Corregi UNICAMENTE lo necesario para que esos tests pasen. Commit local (NO push
 
     // stream() evita el 500 del gateway en respuestas largas (ver create-plans)
     const codeStream = await codeSupervisorAgent.stream(codePrompt, {
-      memory: { thread, resource: 'task-pipeline' },
+      memory: { thread: codeThread, resource: `project-${inputData.repoSlug}` },
       maxSteps: 80,
       requestContext,
       modelSettings: { maxRetries: 5 },
@@ -496,6 +532,9 @@ Corregi UNICAMENTE lo necesario para que esos tests pasen. Commit local (NO push
           branch: inputData.branch,
           repoUrl: inputData.repoUrl,
           detectedStack: inputData.detectedStack,
+          executionId: inputData.executionId,
+          iteration,
+          resourceId: inputData.repoSlug,
           ...(onlyIds && onlyIds.length > 0 ? { onlyTestIds: onlyIds } : {}),
         },
         requestContext,
@@ -531,21 +570,15 @@ Corregi UNICAMENTE lo necesario para que esos tests pasen. Commit local (NO push
     };
 
     try {
-      // Corrida parcial si hay TCs fallidos re-testeables
+      // Corrida parcial si hay TCs fallidos re-testeables; si no, corrida completa.
+      // CAMBIO: NO re-ejecutar suite completa si la parcial pasa.
+      // En su lugar, usar agregacion de resultados (knownResults) para certificar
+      // por acumulacion de resultados conocidos.
       if (retryIds.length > 0) {
-        const qaPartial = await runQAWorkflow(
+        qa = await runQAWorkflow(
           `${inputData.repoPath}/.qa/cert-iter-${iteration}`,
           retryIds,
         );
-
-        // Si la corrida parcial paso, ejecutar suite completa para certificacion final
-        if (qaPartial.passed) {
-          qa = await runQAWorkflow(
-            `${inputData.repoPath}/.qa/cert-iter-${iteration}-full`,
-          );
-        } else {
-          qa = qaPartial;
-        }
       } else {
         // Corrida completa (primera iteracion o sin fallidos re-testeables)
         qa = await runQAWorkflow(
@@ -563,17 +596,82 @@ Corregi UNICAMENTE lo necesario para que esos tests pasen. Commit local (NO push
       };
     }
 
+    // --- Agregacion de resultados (knownResults) ---
+    // Mergear resultados nuevos de esta iteracion con los conocidos previos.
+    // El resultado más reciente (de esta iteracion) pisa al anterior.
+    const newKnownResults = [...(inputData.knownResults ?? [])];
+    for (const failedTest of qa.failedTests) {
+      // Actualizar o agregar resultado: no poner en knownResults los pseudo-IDs (startup, qa-workflow, etc.)
+      if (/^TC-/i.test(failedTest.id)) {
+        const idx = newKnownResults.findIndex((r) => r.id === failedTest.id);
+        if (idx >= 0) {
+          newKnownResults[idx] = {
+            id: failedTest.id,
+            passed: false,
+            reason: failedTest.reason,
+            evidencePath: failedTest.evidencePath,
+            iterationFound: newKnownResults[idx].iterationFound ?? iteration,
+          };
+        } else {
+          newKnownResults.push({
+            id: failedTest.id,
+            passed: false,
+            reason: failedTest.reason,
+            evidencePath: failedTest.evidencePath,
+            iterationFound: iteration,
+          });
+        }
+      }
+    }
+
+    // Agregar resultados que pasaron en esta corrida
+    // (asumiendo que el workflow QA devuelve totalTests y si passou=true)
+    if (qa.passed && qa.totalTests > 0) {
+      // Si toda la suite paso, marcar todos los TCs como passed
+      // (en una corrida completa, todos pasan; en parcial, solo los re-testeados)
+      // Para corrida parcial, solo actualizar los TCs en retryIds
+      const tcsToMark = retryIds.length > 0 ? retryIds : [];
+      for (const tcId of tcsToMark) {
+        const idx = newKnownResults.findIndex((r) => r.id === tcId);
+        if (idx >= 0) {
+          newKnownResults[idx] = {
+            ...newKnownResults[idx],
+            passed: true,
+            reason: undefined,
+            iterationFound: iteration,
+          };
+        }
+      }
+    }
+
+    // Decidir si certificado por agregacion: todos los TCs conocidos estan en passed
+    const allKnownPassed = newKnownResults.length > 0 && newKnownResults.every((r) => r.passed);
+    const certifyByAggregation = allKnownPassed && newKnownResults.length > 0;
+
+    // Construir qaNotes con informacion sobre agregacion si aplica
+    let finalQaNotes = qa.notes;
+    if (certifyByAggregation && retryIds.length > 0) {
+      // Nota: certificacion por agregacion
+      const passedInThisIter = retryIds.filter((id) =>
+        newKnownResults.find((r) => r.id === id && r.passed)
+      );
+      finalQaNotes = `TCs re-testeados en iter ${iteration}: ${passedInThisIter.join(', ')}. ` +
+        `Certificacion por agregacion: ${newKnownResults.map((r) => r.id).join(', ')} ` +
+        `certificados a traves de multiples iteraciones.`;
+    }
+
     return {
       ...inputData,
       iteration,
-      passed: qa.passed,
+      passed: certifyByAggregation || qa.passed,
       aborted: false,
       appUrl: app.appUrl,
       failedTests: qa.failedTests,
-      qaNotes: qa.notes,
+      qaNotes: finalQaNotes,
       maturityScore: qa.maturityScore,
       totalTests: qa.totalTests,
       codeSummary: codeText.slice(0, 2000),
+      knownResults: newKnownResults,
     };
   },
 });

@@ -47,6 +47,7 @@ Numeracion global consecutiva: TC-01, TC-02...
 - Un archivo MD por test case
 - Registrar testMode en cada archivo
 - TODOS los archivos generados deben guardarse DENTRO de certificationPath
+- REGLA CRITICA: NO generar test cases que requieran completar flujos en servicios externos (login real en IdP, abrir email, etc.). Para criterios manuales, generar TC SOLO hasta el limite automatizable definido en qa-plan (ej: Then la URL contiene login.microsoftonline.com). Si un criterio es 100% manual, NO generar TC: dejarlo documentado como excluido. La regla "CADA criterio debe tener al menos un TC" se aplica SOLO a criterios automatizables.
 
 ## Output Esperado
 Retornar al orquestador un resumen JSON con:

@@ -8,6 +8,12 @@ import type { DetectedStack } from '../../schemas/detected-stack';
  * y hace el health-check con fetch desde el HOST (que es donde corre el
  * browser de QA).
  *
+ * Topología:
+ * - Health-check: desde el HOST en http://localhost:{port} (fetch del host)
+ * - appUrl (para browser QA):
+ *   - Si QA_BROWSER_CDP_URL está definida (browser en Docker): http://host.docker.internal:{port}
+ *   - Si no: http://localhost:{port} (browser local en el host)
+ *
  * Metodos:
  * - compose (recomendado): `docker compose up -d --build`. Como el daemon es
  *   el del host (socket montado), los contenedores de la app son hermanos del
@@ -27,6 +33,15 @@ export interface StartAppResult {
 
 const HEALTH_RETRIES = 30;
 const HEALTH_INTERVAL_MS = 2000;
+
+/**
+ * Determina el host a usar en appUrl para el browser de QA.
+ * Si el browser está en Docker (QA_BROWSER_CDP_URL definida), debe usar host.docker.internal.
+ * Si el browser corre localmente en el host, usa localhost.
+ */
+function getAppHost(): string {
+  return process.env.QA_BROWSER_CDP_URL ? 'host.docker.internal' : 'localhost';
+}
 
 async function exec(command: string, args: string[], cwd?: string, timeout = 120_000) {
   if (!projectSandbox.executeCommand) {
@@ -107,7 +122,8 @@ export async function startApp(repoPath: string, detectedStack: DetectedStack): 
           logs: `La app no respondio en los puertos ${ports.join(', ')} tras ${HEALTH_RETRIES * 2}s.\n${await collectLogs(repoPath, 'compose')}`,
         };
       }
-      return { appUrl: `http://localhost:${port}`, started: true, method: 'compose', port };
+      const appHost = getAppHost();
+      return { appUrl: `http://${appHost}:${port}`, started: true, method: 'compose', port };
     }
 
     // Fallback script: el puerto NO se publica al host (ver LIMITACION arriba).
@@ -124,7 +140,8 @@ export async function startApp(repoPath: string, detectedStack: DetectedStack): 
         logs: `Sin docker-compose.yml y la app no es accesible desde el host (limitacion del fallback script). Logs:\n${await collectLogs(repoPath, 'script')}`,
       };
     }
-    return { appUrl: `http://localhost:${port}`, started: true, method: 'script', port };
+    const appHost = getAppHost();
+    return { appUrl: `http://${appHost}:${port}`, started: true, method: 'script', port };
   } catch (error) {
     return {
       appUrl: '',

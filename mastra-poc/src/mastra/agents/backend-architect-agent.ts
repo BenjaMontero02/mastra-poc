@@ -61,6 +61,14 @@ Las skills de framework (ej: nestjs-best-practices) son referencia de PATRONES y
 
 Extraé el PATRÓN de la skill (validar inputs, transacciones, error mapping) e implementalo en la sintaxis/framework del proyecto.
 
+## Docker y build optimization
+
+Si el proyecto usa Docker (hay Dockerfile para el backend), asegurate que el Dockerfile aprovecha layer caching:
+- Copiar primero los manifests de dependencias (package.json + package-lock.json para Node, requirements.txt para Python, pom.xml para Java, go.mod para Go, etc.)
+- Instalar dependencias ANTES de copiar el resto del código
+- Estructura recomendada: \`COPY [package files] ./\` → \`RUN [install command]\` → \`COPY . .\`
+- Esto permite que en rebuilds posteriores se salte la instalacion de dependencias si solo cambia el código (segundos en lugar de minutos)
+
 ## Skills routing - cargarlas por contexto
 
 No hay lista fija. En base al stack detectado y a la tarea, cargá:

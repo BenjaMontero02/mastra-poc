@@ -8,6 +8,163 @@ import { playwrightTestExecutorAgent } from '../agents/playwright-test-executor-
 import { executiveReporterAgent } from '../agents/executive-reporter-agent';
 import { projectSandbox } from '../workspaces';
 
+// --- Helper para generar HTML de evidencia determinísticamente ---
+
+interface StepResult {
+  gherkin: string;
+  action: string;
+  result: string;
+  passed: boolean;
+  screenshotPath: string;
+}
+
+interface TestExecutionResult {
+  id: string;
+  passed: boolean;
+  reason: string;
+  steps?: StepResult[];
+}
+
+/**
+ * HTML escape helper to prevent XSS from LLM-generated or user-controlled content
+ */
+function escapeHtml(str: string): string {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Validate screenshot filename against whitelist pattern
+ */
+function isValidScreenshotFilename(filename: string): boolean {
+  return /^[A-Za-z0-9._-]+\.png$/.test(filename);
+}
+
+/**
+ * Genera HTML de evidencia determinísticamente a partir del resultado del test.
+ * El HTML contiene referencias relativas a las imágenes PNG (./nn-label.png).
+ * Todas las interpolaciones de texto se escapan para prevenir XSS.
+ */
+function buildEvidenceHtml(tcId: string, tcResult: TestExecutionResult): string {
+  const now = new Date().toISOString();
+  const passed = tcResult.passed ? 'PASSED' : 'FAILED';
+  const passedColor = tcResult.passed ? '#28a745' : '#dc3545';
+
+  let stepsHtml = '';
+  if (Array.isArray(tcResult.steps)) {
+    stepsHtml = tcResult.steps
+      .map((step, idx) => {
+        const stepPassed = step.passed ? 'PASS' : 'FAIL';
+        const stepColor = step.passed ? '#28a745' : '#dc3545';
+
+        // Extract and validate filename (prevent path traversal and XSS)
+        const rawFilename = step.screenshotPath.split('/').pop() || `step-${idx}.png`;
+        const imgFilename = isValidScreenshotFilename(rawFilename) ? rawFilename : null;
+
+        const imgHtml = imgFilename
+          ? `<img src="./${escapeHtml(imgFilename)}" style="max-width: 100%; border: 1px solid #ccc; border-radius: 3px;" alt="Step ${idx + 1} screenshot" />`
+          : `<div style="padding: 20px; background-color: #f9f9f9; border: 1px solid #ddd; border-radius: 3px; color: #666; font-size: 12px;">Screenshot unavailable (invalid filename)</div>`;
+
+        return `
+    <div style="margin-bottom: 20px; border: 1px solid #ddd; padding: 10px; border-radius: 4px;">
+      <div style="margin-bottom: 10px;">
+        <strong>Step ${idx + 1}: ${escapeHtml(step.gherkin)}</strong><br/>
+        <span style="font-size: 12px; color: #666;">Action: ${escapeHtml(step.action)}</span><br/>
+        <span style="font-size: 12px; color: #666;">Result: ${escapeHtml(step.result)}</span>
+      </div>
+      <div style="margin-bottom: 10px;">
+        <span style="display: inline-block; padding: 4px 8px; background-color: ${stepColor}; color: white; border-radius: 3px; font-weight: bold; font-size: 12px;">
+          ${stepPassed}
+        </span>
+      </div>
+      <div style="margin-top: 10px;">
+        ${imgHtml}
+      </div>
+    </div>`;
+      })
+      .join('');
+  }
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Test Evidence - ${escapeHtml(tcId)}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f5f5; padding: 20px; }
+    .container { max-width: 1000px; margin: 0 auto; background-color: white; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 6px 6px 0 0; }
+    .header h1 { font-size: 28px; margin-bottom: 10px; }
+    .header p { font-size: 14px; opacity: 0.9; }
+    .content { padding: 30px; }
+    .info-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+    .info-table tr { border-bottom: 1px solid #eee; }
+    .info-table td { padding: 12px; font-size: 14px; }
+    .info-table td:first-child { font-weight: bold; width: 150px; background-color: #f9f9f9; }
+    .result-badge { display: inline-block; padding: 8px 16px; background-color: ${passedColor}; color: white; border-radius: 4px; font-weight: bold; font-size: 14px; }
+    .steps { margin-top: 30px; }
+    .steps h2 { font-size: 18px; margin-bottom: 20px; color: #333; border-bottom: 2px solid #667eea; padding-bottom: 10px; }
+    .footer { border-top: 1px solid #eee; padding: 20px; text-align: center; font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Test Execution Evidence</h1>
+      <p>Test Case: ${escapeHtml(tcId)}</p>
+    </div>
+    <div class="content">
+      <table class="info-table">
+        <tr><td>Test Case ID</td><td>${escapeHtml(tcId)}</td></tr>
+        <tr><td>Status</td><td><span class="result-badge">${passed}</span></td></tr>
+        <tr><td>Reason</td><td>${escapeHtml(tcResult.reason)}</td></tr>
+        <tr><td>Timestamp</td><td>${escapeHtml(now)}</td></tr>
+        ${Array.isArray(tcResult.steps) ? `<tr><td>Total Steps</td><td>${tcResult.steps.length}</td></tr>` : ''}
+        ${Array.isArray(tcResult.steps) ? `<tr><td>Passed Steps</td><td>${tcResult.steps.filter(s => s.passed).length}</td></tr>` : ''}
+      </table>
+      ${stepsHtml ? `<div class="steps"><h2>Step Details</h2>${stepsHtml}</div>` : ''}
+    </div>
+    <div class="footer">
+      Generated at ${escapeHtml(now)} | Mastra QA Certification
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+// --- Helpers para derivar IDs únicos con fallbacks (compatibilidad standalone) ---
+
+/**
+ * Deriva o fallback de execId: si viene executionId, usalo; sino, sanitiza appUrl.
+ * Esto permite que el workflow funcione sin executionId pero con memoria aislada por appUrl.
+ */
+function deriveExecId(inputData: { executionId?: string; appUrl: string }): string {
+  if (inputData.executionId) {
+    return inputData.executionId;
+  }
+  // Fallback: sanitiza appUrl para generar un ID único (pero acotado a la app, no a la ejecución)
+  return `url-${inputData.appUrl.replace(/[^a-z0-9]/gi, '').slice(0, 20)}`;
+}
+
+/**
+ * Deriva o fallback de iteración: si viene iteration, usalo; sino, 0.
+ */
+function deriveIteration(iteration?: number): number {
+  return iteration ?? 0;
+}
+
+/**
+ * Deriva resourceId para el memory.resource: si viene resourceId, úsalo; sino, fallback a 'qa-certification'.
+ */
+function deriveResourceId(resourceId?: string): string {
+  return resourceId ? `project-${resourceId}` : 'qa-certification';
+}
+
 // ===========================
 // SCHEMAS DE ENTRADA Y SALIDA
 // ===========================
@@ -33,6 +190,9 @@ export const qaCertificationInputSchema = z.object({
     .array(z.string())
     .optional()
     .describe('Si presente, ejecutar SOLO estos test case IDs (TC-nn). Si vacio, ejecutar suite completa.'),
+  executionId: z.string().optional().describe('ID de ejecución único (opcional, para aislar memoria por tarea)'),
+  iteration: z.number().optional().describe('Número de iteración actual (opcional, para aislar memoria por iteración)'),
+  resourceId: z.string().optional().describe('ID del recurso/proyecto para aislar memoria (opcional, fallback a qa-certification)'),
 });
 
 export const qaCertificationOutputSchema = z.object({
@@ -151,10 +311,14 @@ Ejecuta el flujo:
 
 Responde SOLO con JSON válido (sin markdown ni explicaciones).`;
 
+      const execId = deriveExecId(inputData);
+      const iter = deriveIteration(inputData.iteration);
+      const resource = deriveResourceId(inputData.resourceId);
+
       const stream = await agent.stream(prompt, {
         memory: {
-          thread: `qa-${inputData.appUrl.replace(/[^a-z0-9]/gi, '')}`,
-          resource: 'qa-certification',
+          thread: `qa-explore-${execId}-iter-${iter}`,
+          resource,
         },
         maxSteps: 25,
         modelSettings: { maxRetries: 2 },
@@ -258,10 +422,14 @@ Ejecuta el flujo:
 
 Responde SOLO con JSON válido (sin markdown).`;
 
+      const execId = deriveExecId(inputData);
+      const iter = deriveIteration(inputData.iteration);
+      const resource = deriveResourceId(inputData.resourceId);
+
       const stream = await agent.stream(prompt, {
         memory: {
-          thread: `qa-stories-${inputData.mode}`,
-          resource: 'qa-certification',
+          thread: `qa-stories-${inputData.mode}-${execId}-iter-${iter}`,
+          resource,
         },
         maxSteps: 25,
         modelSettings: { maxRetries: 2 },
@@ -372,10 +540,14 @@ Ejecuta el flujo:
 
 Responde SOLO con JSON válido.`;
 
+      const execId = deriveExecId(inputData);
+      const iter = deriveIteration(inputData.iteration);
+      const resource = deriveResourceId(inputData.resourceId);
+
       const stream = await agent.stream(prompt, {
         memory: {
-          thread: `qa-gherkin-${inputData.mode}`,
-          resource: 'qa-certification',
+          thread: `qa-gherkin-${inputData.mode}-${execId}-iter-${iter}`,
+          resource,
         },
         maxSteps: 25,
         modelSettings: { maxRetries: 2 },
@@ -525,59 +697,101 @@ const executeTestsStep = createStep({
 
         try {
           // Memoria unica por TC e iteracion para evitar arrastrar contexto
-          const threadId = `qa-executor-${tcId}-${inputData.certificationPath.replace(/[^a-z0-9]/gi, '')}`;
+          const execId = deriveExecId(inputData);
+          const iter = deriveIteration(inputData.iteration);
+          const resource = deriveResourceId(inputData.resourceId);
+          const threadId = `qa-executor-${tcId}-${execId}-iter-${iter}`;
 
+          const evidenceDir = `${inputData.certificationPath}/evidence`;
           const prompt = `Ejecuta el test case ${tcId} en ${inputData.testCasesPath}.
 
 Test Case ID: ${tcId}
 Test Cases Path: ${inputData.testCasesPath}
 App URL: ${inputData.appUrl}
-Certification Path: ${inputData.certificationPath}
+Evidence Dir: ${evidenceDir}
 
 Ejecuta el flujo:
 1. Usa workspace read_file para leer ${inputData.testCasesPath}/${tcId}-*.md
-2. Ejecuta cada paso Gherkin en el navegador (Given/When/Then)
-3. Captura screenshots en cada paso (devuelven base64)
-4. Embebe los screenshots en un HTML de evidencia
-5. Guarda el HTML en ${inputData.certificationPath}/evidence/Evidencia-${tcId}.html
-6. Responde SOLO con un JSON de resultado:
+2. Ejecuta cada paso Gherkin en el navegador (Given/When/Then), máx 10 pasos
+3. En cada paso, usa capture_evidence_screenshot con stepLabel (ej: "01-given-setup") y evidenceDir = "${evidenceDir}"
+   - El tool devuelve solo la ruta PNG, NO base64
+   - Los archivos PNG se guardan en el sandbox y se versionan en git
+4. Registra resultado de cada paso (PASS/FAIL) con la ruta PNG correspondiente
+5. Responde SOLO con un JSON estructurado (sin HTML):
 {
   "id": "${tcId}",
   "passed": true/false,
-  "reason": "descripcion si paso, o razon si fallo",
-  "evidencePath": "${inputData.certificationPath}/evidence/Evidencia-${tcId}.html"
+  "reason": "descripcion o razon de fallo",
+  "steps": [
+    {
+      "gherkin": "Given ...",
+      "action": "...",
+      "result": "...",
+      "passed": true/false,
+      "screenshotPath": "/workspace/.../01-given.png"
+    }
+  ]
 }`;
 
           const stream = await agent.stream(prompt, {
             memory: {
               thread: threadId,
-              resource: 'qa-certification',
+              resource,
             },
-            maxSteps: 15,
+            maxSteps: 10,
             modelSettings: { maxRetries: 2 },
           });
           const resultText = await stream.text;
 
+          const htmlPath = `${inputData.certificationPath}/evidence/Evidencia-${tcId}.html`;
           let tcResult = {
             id: tcId,
             passed: false,
             reason: 'respuesta del executor no parseable',
-            evidencePath: `${inputData.certificationPath}/evidence/Evidencia-${tcId}.html`,
+            evidencePath: htmlPath,
           };
+
+          let parsedExecution: TestExecutionResult | null = null;
 
           try {
             const jsonMatch = resultText.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
-              const parsed = JSON.parse(jsonMatch[0]);
+              parsedExecution = JSON.parse(jsonMatch[0]) as TestExecutionResult;
               tcResult = {
                 id: tcId,
-                passed: Boolean(parsed.passed),
-                reason: parsed.reason,
-                evidencePath: parsed.evidencePath || tcResult.evidencePath,
+                passed: Boolean(parsedExecution.passed),
+                reason: parsedExecution.reason || 'Sin descripción',
+                evidencePath: htmlPath,
               };
             }
           } catch {
             // Si no parsea, mantener default (passed: false)
+          }
+
+          // Generar HTML determinísticamente si logramos parsear el JSON con steps
+          if (parsedExecution) {
+            try {
+              const htmlContent = buildEvidenceHtml(tcId, parsedExecution);
+              // Escribir HTML al sandbox via base64 -d para evitar escaping
+              if (!projectSandbox.executeCommand) {
+                throw new Error('projectSandbox.executeCommand not available');
+              }
+
+              const base64Html = Buffer.from(htmlContent).toString('base64');
+              const writeResult = await projectSandbox.executeCommand('sh', [
+                '-c',
+                `echo "$1" | base64 -d > "$2"`,
+                'sh',
+                base64Html,
+                htmlPath,
+              ]);
+
+              if (!writeResult.success) {
+                console.error(`[execute-tests] Failed to write HTML for ${tcId}: ${writeResult.stderr}`);
+              }
+            } catch (htmlError) {
+              console.error(`[execute-tests] HTML generation failed for ${tcId}:`, htmlError);
+            }
           }
 
           executedTests.push(tcResult);
@@ -715,10 +929,14 @@ Responde SOLO con JSON valido:
   "maturityClassification": "Bueno/Excelente/Regular/Critico"
 }`;
 
+      const execId = deriveExecId(inputData);
+      const iter = deriveIteration(inputData.iteration);
+      const resource = deriveResourceId(inputData.resourceId);
+
       const stream = await agent.stream(prompt, {
         memory: {
-          thread: `qa-reporter-${inputData.certificationPath.replace(/[^a-z0-9]/gi, '')}`,
-          resource: 'qa-certification',
+          thread: `qa-reporter-${execId}-iter-${iter}`,
+          resource,
         },
         maxSteps: 25,
         modelSettings: { maxRetries: 2 },

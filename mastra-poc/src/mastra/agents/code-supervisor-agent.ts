@@ -77,12 +77,18 @@ Delega al doc-writer con un resumen que incluya:
 
 2. **Paths y build**: Los paths del compose deben ser relativos a la carpeta del repo (donde corres el compose dentro del sandbox). Usa \`build:\` con contexto relativo y evita bind mounts de volúmenes en el compose (el daemon del host no ve los paths del contenedor). Prefiere imágenes o builds.
 
-3. **Validación (dentro del sandbox)**:
+3. **Layer caching en Dockerfiles**: Para acelerar rebuilds en iteraciones posteriores, asegúrate que cada Dockerfile aprovecha el layer caching:
+   - Copiar primero los manifests de dependencias (package.json + package-lock.json, requirements.txt, pom.xml, Gemfile, etc.)
+   - Instalar dependencias en una layer separada ANTES de copiar el resto del código
+   - Orden: \`COPY package*.json ./\` → \`RUN npm ci\` → \`COPY . .\`
+   - De esta forma, si solo cambia el código, npm install se saltea (segundos en lugar de minutos por rebuild)
+
+4. **Validación (dentro del sandbox)**:
    - Corre \`docker compose config\` para verificar sintaxis
    - Corre \`npm run build\` (o equivalente del stack) para validar que compila
    - **NO ejecutes \`docker compose up\`**: lo hace el step start-app del pipeline después
 
-4. **Documentación**: Registra en el resumen final los puertos/URLs esperados de front y back (ej: frontend http://localhost:3000, backend http://localhost:8000)
+5. **Documentación**: Registra en el resumen final los puertos/URLs esperados de front y back (ej: frontend http://localhost:3000, backend http://localhost:8000)
 
 ### Fase 6: Git commit (sin push)
 Ejecuta en orden:
