@@ -26,7 +26,7 @@ import { backendArchitectAgent } from './agents/backend-architect-agent';
 import { queueTool, doneTool, plansTool, approvePlansTool } from './tools/tasks-tool';
 import { writeTaskTool } from './tools/write-task-tool';
 import { taskMemory } from './memory';
-import { skillsWorkspace, projectWorkspace, docsWorkspace, frontendArchitectWorkspace, backendArchitectWorkspace, qaWorkspace } from './workspaces';
+import { skillsWorkspace, projectWorkspace, frontendArchitectWorkspace, backendArchitectWorkspace, qaWorkspace } from './workspaces';
 
 export const mastra = new Mastra({
   workflows: { taskPipelineWorkflow, qaCertificationWorkflow },
@@ -68,7 +68,6 @@ export const mastra = new Mastra({
 });
 
 mastra.addWorkspace(projectWorkspace);
-mastra.addWorkspace(docsWorkspace);
 mastra.addWorkspace(frontendArchitectWorkspace);
 mastra.addWorkspace(backendArchitectWorkspace);
 mastra.addWorkspace(qaWorkspace);

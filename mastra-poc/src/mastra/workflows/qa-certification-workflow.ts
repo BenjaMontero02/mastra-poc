@@ -29,6 +29,10 @@ export const qaCertificationInputSchema = z.object({
     .any()
     .optional()
     .describe('Stack tecnológico detectado (opcional)'),
+  onlyTestIds: z
+    .array(z.string())
+    .optional()
+    .describe('Si presente, ejecutar SOLO estos test case IDs (TC-nn). Si vacio, ejecutar suite completa.'),
 });
 
 export const qaCertificationOutputSchema = z.object({
@@ -58,6 +62,7 @@ const exploreAppStep = createStep({
   inputSchema: qaCertificationInputSchema,
   outputSchema: z.object({
     ...qaCertificationInputSchema.shape,
+    onlyTestIds: z.array(z.string()).optional(),
     discoveryPath: z.string(),
     pagesDiscovered: z.number(),
     formsDiscovered: z.number(),
@@ -152,7 +157,7 @@ Responde SOLO con JSON válido (sin markdown ni explicaciones).`;
           resource: 'qa-certification',
         },
         maxSteps: 25,
-        modelSettings: { maxRetries: 5 },
+        modelSettings: { maxRetries: 2 },
       });
       const resultText = await stream.text;
 
@@ -206,6 +211,7 @@ const createUserStoriesStep = createStep({
   }),
   outputSchema: z.object({
     ...qaCertificationInputSchema.shape,
+    onlyTestIds: z.array(z.string()).optional(),
     discoveryPath: z.string().optional(),
     pagesDiscovered: z.number().optional(),
     formsDiscovered: z.number().optional(),
@@ -258,7 +264,7 @@ Responde SOLO con JSON válido (sin markdown).`;
           resource: 'qa-certification',
         },
         maxSteps: 25,
-        modelSettings: { maxRetries: 5 },
+        modelSettings: { maxRetries: 2 },
       });
       const resultText = await stream.text;
 
@@ -279,6 +285,7 @@ Responde SOLO con JSON válido (sin markdown).`;
 
       return {
         ...inputData,
+        onlyTestIds: inputData.onlyTestIds,
         storiesPath: `${inputData.testSuitePath}/user-stories.md`,
         totalStories: parsedResult.totalStories || 0,
         totalCriteria: parsedResult.totalCriteria || 0,
@@ -314,6 +321,7 @@ const designGherkinTestsStep = createStep({
   }),
   outputSchema: z.object({
     ...qaCertificationInputSchema.shape,
+    onlyTestIds: z.array(z.string()).optional(),
     discoveryPath: z.string().optional(),
     pagesDiscovered: z.number().optional(),
     formsDiscovered: z.number().optional(),
@@ -370,7 +378,7 @@ Responde SOLO con JSON válido.`;
           resource: 'qa-certification',
         },
         maxSteps: 25,
-        modelSettings: { maxRetries: 5 },
+        modelSettings: { maxRetries: 2 },
       });
       const resultText = await stream.text;
 
@@ -389,6 +397,7 @@ Responde SOLO con JSON válido.`;
 
       return {
         ...inputData,
+        onlyTestIds: inputData.onlyTestIds,
         testCasesPath: `${inputData.testSuitePath}/test-cases`,
         totalTestCases: parsedResult.totalTestCases || 0,
       };
@@ -402,12 +411,15 @@ Responde SOLO con JSON válido.`;
 });
 
 // ===========================
-// STEP 4: PLAYWRIGHT TEST EXECUTOR
+// STEP 4: PLAYWRIGHT TEST EXECUTOR (LOOP SECUENCIAL POR TC)
 // ===========================
+
+// Presupuesto de tiempo para ejecucion de tests: 30 minutos
+const EXECUTION_BUDGET_MS = 30 * 60_000;
 
 const executeTestsStep = createStep({
   id: 'execute-tests',
-  description: 'Ejecuta los test cases con Playwright',
+  description: 'Ejecuta los test cases con Playwright (secuencial, uno por uno)',
   inputSchema: z.object({
     ...qaCertificationInputSchema.shape,
     testCasesPath: z.string().optional(),
@@ -441,59 +453,146 @@ const executeTestsStep = createStep({
     }
 
     try {
+      // Listado determinista de TCs (sin LLM)
+      if (!projectSandbox.executeCommand) {
+        throw new Error('El sandbox no soporta executeCommand');
+      }
+
+      // Sanitizacion: testCasesPath se usa en comando shell
+      if (
+        !/^[A-Za-z0-9._\/-]+$/.test(inputData.testCasesPath || '') ||
+        !inputData.testCasesPath?.startsWith('/workspace/')
+      ) {
+        throw new Error(`testCasesPath invalido: ${inputData.testCasesPath}`);
+      }
+
+      // Listar archivos TC-*.md
+      const listResult = await projectSandbox.executeCommand('sh', [
+        '-c',
+        'ls -- "$1"/TC-*.md 2>/dev/null | sort -V',
+        'sh',
+        inputData.testCasesPath,
+      ]);
+
+      let tcFiles: string[] = [];
+      if (listResult.success && listResult.stdout) {
+        tcFiles = listResult.stdout
+          .trim()
+          .split('\n')
+          .filter((f) => f.trim());
+      }
+
+      // Extraer IDs deterministicamente (TC-{nn})
+      const tcIds = tcFiles.map((f) => {
+        const match = f.match(/TC-(\d+)/);
+        return match ? `TC-${match[1]}` : null;
+      }).filter(Boolean) as string[];
+
+      // Filtro: si onlyTestIds esta presente, ejecutar SOLO esos (match exacto)
+      let testsToExecute = tcIds;
+      if (inputData.onlyTestIds && inputData.onlyTestIds.length > 0) {
+        const filtered = tcIds.filter((id) => inputData.onlyTestIds!.includes(id));
+        // Defensa: si el filtro da lista vacia (IDs desincronizados), ejecutar suite completa
+        // para no quedarse sin hacer nada
+        if (filtered.length === 0) {
+          console.warn('[execute-tests] onlyTestIds solicitados no encontraron coincidencias en suite. Ejecutando suite completa como fallback.');
+          testsToExecute = tcIds;
+        } else {
+          testsToExecute = filtered;
+        }
+      }
+
+      const executedTests: Array<{
+        id: string;
+        passed: boolean;
+        reason?: string;
+        evidencePath?: string;
+      }> = [];
+      const startedAt = Date.now();
       const agent = playwrightTestExecutorAgent;
 
-      const prompt = `Ejecuta los test cases en ${inputData.testCasesPath}.
+      for (const tcId of testsToExecute) {
+        // Presupuesto de tiempo: si se agoto, marcar restantes como agotado
+        const elapsedMs = Date.now() - startedAt;
+        if (elapsedMs > EXECUTION_BUDGET_MS) {
+          executedTests.push({
+            id: tcId,
+            passed: false,
+            reason: 'presupuesto de tiempo de la iteracion agotado',
+          });
+          continue;
+        }
 
+        try {
+          // Memoria unica por TC e iteracion para evitar arrastrar contexto
+          const threadId = `qa-executor-${tcId}-${inputData.certificationPath.replace(/[^a-z0-9]/gi, '')}`;
+
+          const prompt = `Ejecuta el test case ${tcId} en ${inputData.testCasesPath}.
+
+Test Case ID: ${tcId}
 Test Cases Path: ${inputData.testCasesPath}
 App URL: ${inputData.appUrl}
 Certification Path: ${inputData.certificationPath}
 
 Ejecuta el flujo:
-1. Usa workspace list_directory para listar ${inputData.testCasesPath}
-2. Para CADA archivo TC-{nn}-*.md:
-   a. Usa workspace read_file para leer el test case
-   b. Ejecuta cada paso Gherkin en el navegador (Given/When/Then)
-   c. Captura screenshots en cada paso (devuelven base64)
-   d. Embebe los screenshots en un HTML de evidencia
-   e. Guarda el HTML en ${inputData.certificationPath}/evidence/Evidencia-TC-{nn}.html
-   f. Registra: TC-id, passed (boolean), pasos pasados/fallidos, razón de fallos
-3. Ejecuta TODOS los test cases incluso si algunos fallan
-4. Retorna JSON: array de {id, passed, reason?, evidencePath}
+1. Usa workspace read_file para leer ${inputData.testCasesPath}/${tcId}-*.md
+2. Ejecuta cada paso Gherkin en el navegador (Given/When/Then)
+3. Captura screenshots en cada paso (devuelven base64)
+4. Embebe los screenshots en un HTML de evidencia
+5. Guarda el HTML en ${inputData.certificationPath}/evidence/Evidencia-${tcId}.html
+6. Responde SOLO con un JSON de resultado:
+{
+  "id": "${tcId}",
+  "passed": true/false,
+  "reason": "descripcion si paso, o razon si fallo",
+  "evidencePath": "${inputData.certificationPath}/evidence/Evidencia-${tcId}.html"
+}`;
 
-Responde SOLO con JSON array válido:
-[
-  { "id": "TC-01", "passed": true, "evidencePath": "qa-output/.../evidence/Evidencia-TC-01.html" },
-  { "id": "TC-02", "passed": false, "reason": "El formulario no se cargó", "evidencePath": "..." }
-]`;
+          const stream = await agent.stream(prompt, {
+            memory: {
+              thread: threadId,
+              resource: 'qa-certification',
+            },
+            maxSteps: 15,
+            modelSettings: { maxRetries: 2 },
+          });
+          const resultText = await stream.text;
 
-      const stream = await agent.stream(prompt, {
-        memory: {
-          thread: `qa-executor-${inputData.appUrl.replace(/[^a-z0-9]/gi, '')}`,
-          resource: 'qa-certification',
-        },
-        maxSteps: 40,
-        modelSettings: { maxRetries: 5 },
-      });
-      const resultText = await stream.text;
+          let tcResult = {
+            id: tcId,
+            passed: false,
+            reason: 'respuesta del executor no parseable',
+            evidencePath: `${inputData.certificationPath}/evidence/Evidencia-${tcId}.html`,
+          };
 
-      let executedTests: any[] = [];
-      try {
-        const jsonMatch = resultText.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          executedTests = JSON.parse(jsonMatch[0]);
+          try {
+            const jsonMatch = resultText.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              const parsed = JSON.parse(jsonMatch[0]);
+              tcResult = {
+                id: tcId,
+                passed: Boolean(parsed.passed),
+                reason: parsed.reason,
+                evidencePath: parsed.evidencePath || tcResult.evidencePath,
+              };
+            }
+          } catch {
+            // Si no parsea, mantener default (passed: false)
+          }
+
+          executedTests.push(tcResult);
+        } catch (tcError) {
+          executedTests.push({
+            id: tcId,
+            passed: false,
+            reason: tcError instanceof Error ? tcError.message : String(tcError),
+          });
         }
-      } catch {
-        const idMatches = resultText.match(/TC-\d+/g) || [];
-        executedTests = idMatches.map((id) => ({
-          id,
-          passed: resultText.includes(`${id}.*passed.*true`) ? true : false,
-        }));
       }
 
       const totalTests = executedTests.length;
       const passedCount = executedTests.filter((t) => t.passed).length;
-      const failedCount = totalTests - passedCount;
+      const failedCount = executedTests.filter((t) => !t.passed).length;
 
       return {
         ...inputData,
@@ -540,6 +639,7 @@ const generateReportStep = createStep({
   }),
   outputSchema: z.object({
     ...qaCertificationInputSchema.shape,
+    onlyTestIds: z.array(z.string()).optional(),
     executedTests: z.array(
       z.object({
         id: z.string(),
@@ -559,10 +659,28 @@ const generateReportStep = createStep({
     step3Error: z.string().optional(),
   }),
   execute: async ({ inputData }) => {
+    // Corrida parcial (re-test): calcular score por codigo, NO invocar agente
+    if (inputData.onlyTestIds && inputData.onlyTestIds.length > 0) {
+      const score = Math.round(
+        ((inputData.passedCount || 0) / (inputData.totalTests || 1)) * 100
+      );
+      const classification =
+        score >= 90 ? 'Excelente' : score >= 70 ? 'Bueno' : score >= 50 ? 'Regular' : 'Critico';
+
+      return {
+        ...inputData,
+        onlyTestIds: inputData.onlyTestIds,
+        reportPath: '',
+        maturityScore: score,
+        maturityClassification: classification,
+      };
+    }
+
+    // Corrida completa: invocar agente reporter
     try {
       const agent = executiveReporterAgent;
 
-      const prompt = `Genera el reporte de certificación en ${inputData.certificationPath}.
+      const prompt = `Genera el reporte de certificacion en ${inputData.certificationPath}.
 
 Certification Path: ${inputData.certificationPath}
 Test Suite Path: ${inputData.testSuitePath}
@@ -579,7 +697,7 @@ Ejecuta el flujo:
 1. Usa workspace list_directory para listar ${inputData.certificationPath}/evidence
 2. Para CADA HTML en evidence, extrae metricas de resultado
 3. Calcula maturityScore: (${inputData.passedCount || 0} / ${inputData.totalTests || 1}) * 100 = X%
-4. Clasifica según escala:
+4. Clasifica segun escala:
    - >= 90%: Excelente
    - >= 70%: Bueno
    - >= 50%: Regular
@@ -588,9 +706,9 @@ Ejecuta el flujo:
 6. Usa workspace read_file para leer ${inputData.testSuitePath}/user-stories.md (la suite estable)
 7. Genera Reporte-Certificacion.html usando template HTML profesional
 8. Guarda en ${inputData.certificationPath}/Reporte-Certificacion.html usando workspace write_file
-9. Retorna JSON: reportPath, maturityScore (número), maturityClassification (texto)
+9. Retorna JSON: reportPath, maturityScore (numero), maturityClassification (texto)
 
-Responde SOLO con JSON válido:
+Responde SOLO con JSON valido:
 {
   "reportPath": "${inputData.certificationPath}/Reporte-Certificacion.html",
   "maturityScore": ${Math.round(((inputData.passedCount || 0) / (inputData.totalTests || 1)) * 100)},
@@ -603,7 +721,7 @@ Responde SOLO con JSON válido:
           resource: 'qa-certification',
         },
         maxSteps: 25,
-        modelSettings: { maxRetries: 5 },
+        modelSettings: { maxRetries: 2 },
       });
       const resultText = await stream.text;
 
@@ -634,6 +752,7 @@ Responde SOLO con JSON válido:
 
       return {
         ...inputData,
+        onlyTestIds: inputData.onlyTestIds,
         reportPath: parsedResult.reportPath,
         maturityScore: parsedResult.maturityScore,
         maturityClassification: parsedResult.maturityClassification,
@@ -644,6 +763,7 @@ Responde SOLO con JSON válido:
       );
       return {
         ...inputData,
+        onlyTestIds: inputData.onlyTestIds,
         reportPath: `${inputData.certificationPath}/Reporte-Certificacion.html`,
         maturityScore: score,
         maturityClassification: score < 50 ? 'Critico' : 'Regular',

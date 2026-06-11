@@ -33,9 +33,14 @@ la tarea. La persistencia del trabajo se garantiza con el **push de la rama feat
 final de cada ciclo** (se pushea siempre, pase o no pase QA; el PR solo se crea si QA
 certifica).
 
-Si el proceso host crashea antes del teardown, el contenedor `mastra-task-sandbox` queda
-vivo: el pipeline se reconecta a él en la próxima corrida, o se limpia a mano con
-`docker rm -f mastra-task-sandbox`.
+**Sandbox por tarea, con id unico:**
+Cada tarea levanta su propio sandbox con id `mastra-task-sandbox-<taskId>`, evitando
+reutilizar contenedores con archivos viejos de corridas previas crasheadas. Los contenedores
+huerfanos se limpian best-effort en git-setup (antes de start()) mediante limpieza por
+nombre y etiqueta de compose. Limpieza manual de huerfanos:
+```bash
+docker rm -f $(docker ps -aq --filter name=mastra-task-sandbox)
+```
 
 ## ⚠️ Seguridad: socket de Docker montado
 

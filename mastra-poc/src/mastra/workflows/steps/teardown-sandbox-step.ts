@@ -10,9 +10,10 @@ import { projectSandbox } from '../../workspaces';
  *    contenido del workspace muere con el contenedor — por eso el pipeline
  *    SIEMPRE pushea la rama antes de llegar aca.
  *
- * Si el proceso host crashea antes de este teardown, el contenedor queda vivo:
- * DockerSandbox se reconecta por id/label ('mastra-task-sandbox') en la
- * proxima corrida, o se limpia a mano con `docker rm -f mastra-task-sandbox`.
+ * Cada tarea usa su propio sandbox con id unico (mastra-task-sandbox-<taskId>).
+ * Los huerfanos (contenedores no destruidos de corridas previas crasheadas) se
+ * limpian best-effort en git-setup, antes del start() del nuevo sandbox.
+ * Limpieza manual: `docker rm -f $(docker ps -aq --filter name=mastra-task-sandbox)`.
  */
 
 export interface TeardownResult {

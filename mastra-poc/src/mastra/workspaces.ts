@@ -3,7 +3,7 @@ import { DockerSandbox } from '@mastra/docker';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
-import { PROJECT_ROOT, SKILLS_DIR } from './paths';
+import { SKILLS_DIR } from './paths';
 
 /**
  * Dynamic skills resolver for frontend architect workspace.
@@ -221,27 +221,78 @@ export const skillsWorkspace = new Workspace({
 });
 
 /**
- * Sandbox compartido para todo el pipeline (sandbox-only storage).
- *
- * IMPORTANTE: NO hay bind mount del workspace al host. El repo clonado vive
- * exclusivamente en el filesystem del contenedor (/workspace/<taskId>) y se
- * destruye en el teardown. La persistencia del trabajo se garantiza con el
- * push de la rama feature al final del ciclo (siempre, pase o no pase QA).
- *
- * El socket de Docker se monta para que el code-supervisor pueda levantar la
- * app con docker compose (contenedores hermanos con puertos publicados al
- * host, donde corre el browser de QA). Ver docker/README.md para el tradeoff
- * de seguridad y la ruta de hardening (socket-proxy).
+ * Factory para construir instancias de sandbox con configuracion compartida.
+ * Cada tarea obtiene su propio sandbox (id unico) para evitar reutilizar
+ * contenedores con archivos viejos de corridas previas crasheadas.
  */
-export const projectSandbox = new DockerSandbox({
-  id: 'mastra-task-sandbox',
-  image: 'mastra-sandbox:latest',
-  workingDir: '/workspace',
-  env: { GITHUB_TOKEN: process.env.GITHUB_TOKEN || '' },
-  volumes: {
-    '/var/run/docker.sock': '/var/run/docker.sock',
+function buildProjectSandbox(id: string): DockerSandbox {
+  return new DockerSandbox({
+    id,
+    image: 'mastra-sandbox:latest',
+    workingDir: '/workspace',
+    env: { GITHUB_TOKEN: process.env.GITHUB_TOKEN || '' },
+    volumes: {
+      '/var/run/docker.sock': '/var/run/docker.sock',
+    },
+  });
+}
+
+/**
+ * Holder mutable del sandbox activo.
+ * Cada tarea reemplaza esto con una nueva instancia de id unico.
+ */
+let activeSandbox: DockerSandbox = buildProjectSandbox('mastra-task-sandbox');
+
+/**
+ * Resuelve el sandbox activo para la tarea actual.
+ * Llamalo en git-setup con resetProjectSandbox(taskId) antes de start().
+ */
+export function resetProjectSandbox(taskId: string): DockerSandbox {
+  activeSandbox = buildProjectSandbox(`mastra-task-sandbox-${taskId}`);
+  return activeSandbox;
+}
+
+/**
+ * Obtiene el sandbox activo (la instancia que sigue el sandbox de la tarea actual).
+ */
+export function getProjectSandbox(): DockerSandbox {
+  return activeSandbox;
+}
+
+/**
+ * Sandbox para todo el pipeline (sandbox-only storage).
+ *
+ * IMPORTANTE: Este es un Proxy que delega siempre al sandbox activo (activeSandbox).
+ * Permite que los Workspaces (que capturan su referencia en el constructor)
+ * sigan el sandbox de la tarea actual sin necesidad de tocar el codigo de Workspace
+ * ni los agentes/workflows.
+ *
+ * Cada tarea obtiene su propio sandbox con id unico: mastra-task-sandbox-<taskId>.
+ * Esto previene reutilizar contenedores con archivos viejos de corridas crasheadas.
+ * Los huerfanos se limpian best-effort en git-setup (antes de start()).
+ *
+ * NO hay bind mount del workspace al host. El repo clonado vive exclusivamente
+ * en el filesystem del contenedor (/workspace/<taskId>) y se destruye en teardown.
+ * La persistencia se garantiza pusheando SIEMPRE la rama feature al final
+ * del ciclo (pase o no pase QA).
+ *
+ * El socket de Docker se monta para que code-supervisor pueda levantar la app
+ * con docker compose (contenedores hermanos con puertos publicados al host).
+ * Ver docker/README.md para el tradeoff de seguridad y ruta de hardening.
+ */
+export const projectSandbox: DockerSandbox = new Proxy({} as DockerSandbox, {
+  get(_t, prop) {
+    const value = (activeSandbox as any)[prop];
+    return typeof value === 'function' ? value.bind(activeSandbox) : value;
   },
-});
+  set(_t, prop, value) {
+    (activeSandbox as any)[prop] = value;
+    return true;
+  },
+  has(_t, prop) {
+    return prop in (activeSandbox as any);
+  },
+}) as any;
 
 export const projectWorkspace = new Workspace({
   id: 'project',
@@ -271,13 +322,4 @@ export const qaWorkspace = new Workspace({
   // contenedor via execute_command (no hay filesystem del host).
   sandbox: projectSandbox,
   skills: [path.join(SKILLS_DIR, 'qa')],
-});
-
-export const docsWorkspace = new Workspace({
-  id: 'docs',
-  name: 'Docs Workspace',
-  filesystem: new LocalFilesystem({
-    basePath: path.join(PROJECT_ROOT, 'workspaces', 'docs'),
-  }),
-  skills: [path.join(os.homedir(), '.agents', 'skills')],
 });

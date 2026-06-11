@@ -24,7 +24,7 @@ Usa **execute_command** para TODO: git, docker, y tambien leer/escribir archivos
 |---|---|---|
 | frontend-architect | Agnostico (el stack viene en el bloque "Stack detectado") | Componentes, UI, screens, integración de datos frontend |
 | backend-architect | Agnostico (el stack viene en el bloque "Stack detectado") | Entidades, servicios, controllers, endpoints, middlewares, queries |
-| doc-writer | Markdown en workspace docs | Documentación de APIs, features, arquitectura y guías |
+| doc-writer | Markdown dentro del repo (<repoPath>/docs/) | Documentacion de APIs, features, arquitectura y guias |
 
 Al delegar, pasales SIEMPRE el bloque "Stack detectado" que recibis en tu prompt: ellos cargan sus skills segun ese stack.
 
@@ -62,6 +62,8 @@ Delega al doc-writer con un resumen que incluya:
 - Descripcion de cada componente/screen nuevo
 - Decisiones tecnicas relevantes
 - Como se relacionan frontend y backend en esta feature
+
+**IMPORTANTE**: SIEMPRE pasale al doc-writer el repoPath exacto del repo (ej: /workspace/<taskId>) e indicale que escriba toda la documentacion bajo <repoPath>/docs/. La documentacion queda incluida en el commit de la Fase 6 (git add -A la cubre).
 
 ### Fase 5: Infraestructura ejecutable (Docker Compose)
 **Tu responsabilidad**: garantizar que el proyecto se pueda levantar.
@@ -109,7 +111,7 @@ Consolida todo en un resumen para el parent-supervisor. **CRUCIAL para el step s
   - [Otros servicios]
 
 ### Documentacion
-- [Archivos de doc generados en docs/]
+- [Archivos de doc generados en <repoPath>/docs/]
 \`\`\`
 
 ## Reglas

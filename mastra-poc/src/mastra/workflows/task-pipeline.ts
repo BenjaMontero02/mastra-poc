@@ -3,8 +3,10 @@ import { RequestContext } from '@mastra/core/request-context';
 import { z } from 'zod/v4';
 import fs from 'fs';
 import path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { detectedStackSchema } from '../schemas/detected-stack';
-import { projectSandbox } from '../workspaces';
+import { projectSandbox, resetProjectSandbox } from '../workspaces';
 import { stackDetectorAgent } from '../agents/stack-detector-agent';
 import { planCreatorAgent } from '../agents/plan-creator-agent';
 import { codeSupervisorAgent } from '../agents/code-supervisor-agent';
@@ -12,6 +14,8 @@ import { startApp } from './steps/start-app-step';
 import { teardownSandbox } from './steps/teardown-sandbox-step';
 import { createPullRequest } from './qa-certification-workflow';
 import { QUEUE_DIR, DONE_DIR, PLANS_DIR } from '../paths';
+
+const execFileAsync = promisify(execFile);
 
 /**
  * Pipeline principal de tareas (sandbox-only storage).
@@ -153,7 +157,7 @@ function parsePlansFromText(text: string): { codePlan: string; qaPlan: string; s
 
 const gitSetup = createStep({
   id: 'git-setup',
-  description: 'Levanta el sandbox, clona el repo dentro del contenedor y crea la branch feature',
+  description: 'Limpia contenedores huerfanos, levanta sandbox propio de la tarea, clona repo y crea branch',
   inputSchema: taskInputSchema,
   outputSchema: z.object({ ...baseStateShape }),
   execute: async ({ inputData }) => {
@@ -169,7 +173,40 @@ const gitSetup = createStep({
     const branch = `feature/${taskId}`;
     const repoPath = `/workspace/${taskId}`;
 
-    await projectSandbox.start();
+    // --- Limpieza best-effort de contenedores huerfanos (host-side) ---
+    try {
+      // Limpia contenedores con nombre mastra-task-sandbox (de corridas previas)
+      try {
+        const { stdout: ids } = await execFileAsync('docker', ['ps', '-aq', '--filter', 'name=mastra-task-sandbox']);
+        if (ids.trim()) {
+          const idList = ids.trim().split('\n');
+          for (const id of idList) {
+            await execFileAsync('docker', ['rm', '-f', id]).catch(() => {});
+          }
+        }
+      } catch {
+        // Ignora si docker no esta disponible
+      }
+
+      // Limpia contenedores hermanos de corridas crasheadas (si existe docker-compose)
+      try {
+        const { stdout: ids } = await execFileAsync('docker', ['ps', '-aq', '--filter', `label=com.docker.compose.project=${taskId}`]);
+        if (ids.trim()) {
+          const idList = ids.trim().split('\n');
+          for (const id of idList) {
+            await execFileAsync('docker', ['rm', '-f', id]).catch(() => {});
+          }
+        }
+      } catch {
+        // Ignora si docker no esta disponible o no hay etiquetas
+      }
+    } catch (error) {
+      console.warn(`[git-setup] Limpieza de huerfanos fallo (non-fatal): ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    // --- Reset sandbox y start ---
+    const sandbox = resetProjectSandbox(taskId);
+    await sandbox.start();
 
     // ${GITHUB_TOKEN} se expande DENTRO del contenedor (esta en su env); el
     // token nunca viaja en el texto del comando.
@@ -430,11 +467,59 @@ Corregi UNICAMENTE lo necesario para que esos tests pasen. Commit local (NO push
       };
     }
 
-    // --- Fase 3: certificacion QA (sub-workflow determinista) ---
-    // getWorkflowById busca por el id del workflow ('qa-certification');
-    // getWorkflow espera la clave de registro en index.ts ('qaCertificationWorkflow').
-    const qaWorkflow = mastra?.getWorkflowById('qa-certification');
-    if (!qaWorkflow) throw new Error('qa-certification workflow not found');
+    // --- Fase 3: certificacion QA (sub-workflow con re-test selectivo) ---
+    // Helper: invocar el workflow QA con parametros dados
+    async function runQAWorkflow(
+      certPath: string,
+      onlyIds?: string[],
+    ): Promise<{
+      passed: boolean;
+      maturityScore: number;
+      totalTests: number;
+      failedTests: { id: string; reason: string; evidencePath?: string }[];
+      reportPath: string;
+      notes: string;
+    }> {
+      const qaWorkflow = mastra?.getWorkflowById('qa-certification');
+      if (!qaWorkflow) throw new Error('qa-certification workflow not found');
+
+      const run = await qaWorkflow.createRun();
+      const qaRun = await run.start({
+        inputData: {
+          appUrl: app.appUrl,
+          qaPlanPath: `${inputData.repoPath}/.qa/qa-plan.md`,
+          certificationPath: certPath,
+          testSuitePath: `${inputData.repoPath}/.qa/test-suite`,
+          regenerateSuite: false,
+          mode: 'positivos',
+          taskId: inputData.taskId,
+          branch: inputData.branch,
+          repoUrl: inputData.repoUrl,
+          detectedStack: inputData.detectedStack,
+          ...(onlyIds && onlyIds.length > 0 ? { onlyTestIds: onlyIds } : {}),
+        },
+        requestContext,
+      } as never);
+
+      return (qaRun as { status?: string; result?: any }).status === 'success' && (qaRun as { result?: any }).result
+        ? ((qaRun as { result: any }).result)
+        : {
+            passed: false,
+            maturityScore: 0,
+            totalTests: 0,
+            failedTests: [{ id: 'qa-workflow', reason: `El workflow de QA termino con status ${(qaRun as { status?: string }).status}` }],
+            reportPath: '',
+            notes: 'El sub-workflow de certificacion no completo correctamente.',
+          };
+    }
+
+    // Calcular IDs de tests fallidos re-testeables (excluir pseudo-ids como 'startup')
+    const retryIds =
+      iteration >= 2 && (inputData.failedTests ?? []).length > 0
+        ? (inputData.failedTests ?? [])
+            .map((t) => t.id)
+            .filter((id) => /^TC-/i.test(id))
+        : [];
 
     let qa: {
       passed: boolean;
@@ -444,34 +529,29 @@ Corregi UNICAMENTE lo necesario para que esos tests pasen. Commit local (NO push
       reportPath: string;
       notes: string;
     };
+
     try {
-      const run = await qaWorkflow.createRun();
-      const qaRun = await run.start({
-        inputData: {
-          appUrl: app.appUrl,
-          qaPlanPath: `${inputData.repoPath}/.qa/qa-plan.md`,
-          certificationPath: `${inputData.repoPath}/.qa/cert-iter-${iteration}`,
-          testSuitePath: `${inputData.repoPath}/.qa/test-suite`,
-          regenerateSuite: false,
-          mode: 'positivos',
-          taskId: inputData.taskId,
-          branch: inputData.branch,
-          repoUrl: inputData.repoUrl,
-          detectedStack: inputData.detectedStack,
-        },
-        requestContext,
-      } as never);
-      qa =
-        (qaRun as { status?: string; result?: typeof qa }).status === 'success' && (qaRun as { result?: typeof qa }).result
-          ? ((qaRun as { result: typeof qa }).result)
-          : {
-              passed: false,
-              maturityScore: 0,
-              totalTests: 0,
-              failedTests: [{ id: 'qa-workflow', reason: `El workflow de QA termino con status ${(qaRun as { status?: string }).status}` }],
-              reportPath: '',
-              notes: 'El sub-workflow de certificacion no completo correctamente.',
-            };
+      // Corrida parcial si hay TCs fallidos re-testeables
+      if (retryIds.length > 0) {
+        const qaPartial = await runQAWorkflow(
+          `${inputData.repoPath}/.qa/cert-iter-${iteration}`,
+          retryIds,
+        );
+
+        // Si la corrida parcial paso, ejecutar suite completa para certificacion final
+        if (qaPartial.passed) {
+          qa = await runQAWorkflow(
+            `${inputData.repoPath}/.qa/cert-iter-${iteration}-full`,
+          );
+        } else {
+          qa = qaPartial;
+        }
+      } else {
+        // Corrida completa (primera iteracion o sin fallidos re-testeables)
+        qa = await runQAWorkflow(
+          `${inputData.repoPath}/.qa/cert-iter-${iteration}`,
+        );
+      }
     } catch (error) {
       qa = {
         passed: false,
