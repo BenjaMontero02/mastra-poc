@@ -10,9 +10,7 @@ import type { DetectedStack } from '../../schemas/detected-stack';
  *
  * Topología:
  * - Health-check: desde el HOST en http://localhost:{port} (fetch del host)
- * - appUrl (para browser QA):
- *   - Si QA_BROWSER_CDP_URL está definida (browser en Docker): http://host.docker.internal:{port}
- *   - Si no: http://localhost:{port} (browser local en el host)
+ * - appUrl (para browser QA): http://host.docker.internal:{port} (browser siempre en Docker)
  *
  * Metodos:
  * - compose (recomendado): `docker compose up -d --build`. Como el daemon es
@@ -36,11 +34,10 @@ const HEALTH_INTERVAL_MS = 2000;
 
 /**
  * Determina el host a usar en appUrl para el browser de QA.
- * Si el browser está en Docker (QA_BROWSER_CDP_URL definida), debe usar host.docker.internal.
- * Si el browser corre localmente en el host, usa localhost.
+ * El browser siempre corre en Docker, por lo que usa host.docker.internal.
  */
 function getAppHost(): string {
-  return process.env.QA_BROWSER_CDP_URL ? 'host.docker.internal' : 'localhost';
+  return 'host.docker.internal';
 }
 
 async function exec(command: string, args: string[], cwd?: string, timeout = 120_000) {

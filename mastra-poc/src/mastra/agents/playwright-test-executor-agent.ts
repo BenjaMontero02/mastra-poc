@@ -76,7 +76,7 @@ El navegador te provee estas tools automaticamente:
     id: 'opencode-go/deepseek-v4-pro',
   },
   defaultNetworkOptions: {
-    maxSteps: 15,
+    maxSteps: 50,
   },
   browser: qaBrowser,
   workspace: qaWorkspace,

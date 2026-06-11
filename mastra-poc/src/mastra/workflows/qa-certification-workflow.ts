@@ -181,6 +181,50 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 // ===========================
+// SCHEMAS DE AGENTES (structuredOutput)
+// ===========================
+
+// Schema para respuesta del explore-app step
+const exploreAppResultSchema = z.object({
+  pagesDiscovered: z.number().default(0),
+  formsDiscovered: z.number().default(0),
+});
+
+// Schema para respuesta del create-user-stories step
+const userStoriesResultSchema = z.object({
+  totalStories: z.number().default(0),
+  totalCriteria: z.number().default(0),
+});
+
+// Schema para respuesta del design-gherkin-tests step
+const testDesignResultSchema = z.object({
+  totalTestCases: z.number().default(0),
+});
+
+// Schema para respuesta del execute-tests step (test executor agent)
+const stepResultSchema = z.object({
+  gherkin: z.string().default(''),
+  action: z.string().default(''),
+  result: z.string().default(''),
+  passed: z.boolean().default(false),
+  screenshotPath: z.string().default(''),
+});
+
+const testExecutionResultSchema = z.object({
+  id: z.string().default(''),
+  passed: z.boolean().default(false),
+  reason: z.string().default(''),
+  steps: z.array(stepResultSchema).optional().default([]),
+});
+
+// Schema para respuesta del generate-report step
+const reportResultSchema = z.object({
+  reportPath: z.string(),
+  maturityScore: z.number().default(0),
+  maturityClassification: z.string().default('Regular'),
+});
+
+// ===========================
 // SCHEMAS DE ENTRADA Y SALIDA
 // ===========================
 
@@ -342,31 +386,28 @@ Responde SOLO con JSON válido (sin markdown ni explicaciones).`;
           resource,
         },
         maxSteps: 25,
+        structuredOutput: { schema: exploreAppResultSchema, model: { id: 'opencode-go/qwen3.7-plus' } },
         modelSettings: { maxRetries: 2 },
       });
       // Watchdog: 8 min timeout against unhandled rejections (browser crashes, LLM hangs)
-      const resultText = await withTimeout(stream.text, 8 * 60_000, 'explore-app');
-
-      let parsedResult = { pagesDiscovered: 0, formsDiscovered: 0 };
+      let parsedResult: { pagesDiscovered?: number; formsDiscovered?: number } | null = null;
       try {
-        const jsonMatch = resultText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          parsedResult = JSON.parse(jsonMatch[0]);
-        }
+        parsedResult = await withTimeout(stream.object, 8 * 60_000, 'explore-app');
       } catch {
-        const pageMatch = resultText.match(/(\d+)\s*p[aá]ginas/i);
-        const formMatch = resultText.match(/(\d+)\s*formularios/i);
-        parsedResult = {
-          pagesDiscovered: pageMatch ? parseInt(pageMatch[1], 10) : 0,
-          formsDiscovered: formMatch ? parseInt(formMatch[1], 10) : 0,
-        };
+        // Fallback a defaults si no parsea
+        parsedResult = null;
       }
+
+      const finalResult = {
+        pagesDiscovered: parsedResult?.pagesDiscovered ?? 0,
+        formsDiscovered: parsedResult?.formsDiscovered ?? 0,
+      };
 
       return {
         ...inputData,
         discoveryPath: `${inputData.testSuitePath}/functional-discovery.md`,
-        pagesDiscovered: parsedResult.pagesDiscovered || 0,
-        formsDiscovered: parsedResult.formsDiscovered || 0,
+        pagesDiscovered: finalResult.pagesDiscovered,
+        formsDiscovered: finalResult.formsDiscovered,
         suiteReady: false,
       };
     } catch (error) {
@@ -463,31 +504,29 @@ Responde SOLO con JSON válido (sin markdown).`;
           resource,
         },
         maxSteps: 25,
+        structuredOutput: { schema: userStoriesResultSchema, model: { id: 'opencode-go/qwen3.7-plus' } },
         modelSettings: { maxRetries: 2 },
       });
-      const resultText = await stream.text;
 
-      let parsedResult = { totalStories: 0, totalCriteria: 0 };
+      let parsedResult: { totalStories?: number; totalCriteria?: number } | null = null;
       try {
-        const jsonMatch = resultText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          parsedResult = JSON.parse(jsonMatch[0]);
-        }
+        parsedResult = await stream.object;
       } catch {
-        const storyMatch = resultText.match(/(\d+)\s*historias?/i);
-        const critMatch = resultText.match(/(\d+)\s*criterios?/i);
-        parsedResult = {
-          totalStories: storyMatch ? parseInt(storyMatch[1], 10) : 0,
-          totalCriteria: critMatch ? parseInt(critMatch[1], 10) : 0,
-        };
+        // Fallback a defaults si no parsea
+        parsedResult = null;
       }
+
+      const finalResult = {
+        totalStories: parsedResult?.totalStories ?? 0,
+        totalCriteria: parsedResult?.totalCriteria ?? 0,
+      };
 
       return {
         ...inputData,
         onlyTestIds: inputData.onlyTestIds,
         storiesPath: `${inputData.testSuitePath}/user-stories.md`,
-        totalStories: parsedResult.totalStories || 0,
-        totalCriteria: parsedResult.totalCriteria || 0,
+        totalStories: finalResult.totalStories,
+        totalCriteria: finalResult.totalCriteria,
       };
     } catch (error) {
       return {
@@ -584,28 +623,27 @@ Responde SOLO con JSON válido.`;
           resource,
         },
         maxSteps: 25,
+        structuredOutput: { schema: testDesignResultSchema, model: { id: 'opencode-go/qwen3.7-plus' } },
         modelSettings: { maxRetries: 2 },
       });
-      const resultText = await stream.text;
 
-      let parsedResult = { totalTestCases: 0 };
+      let parsedResult: { totalTestCases?: number } | null = null;
       try {
-        const jsonMatch = resultText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          parsedResult = JSON.parse(jsonMatch[0]);
-        }
+        parsedResult = await stream.object;
       } catch {
-        const tcMatch = resultText.match(/(\d+)\s*test\s*cases?/i);
-        parsedResult = {
-          totalTestCases: tcMatch ? parseInt(tcMatch[1], 10) : 0,
-        };
+        // Fallback a defaults si no parsea
+        parsedResult = null;
       }
+
+      const finalResult = {
+        totalTestCases: parsedResult?.totalTestCases ?? 0,
+      };
 
       return {
         ...inputData,
         onlyTestIds: inputData.onlyTestIds,
         testCasesPath: `${inputData.testSuitePath}/test-cases`,
-        totalTestCases: parsedResult.totalTestCases || 0,
+        totalTestCases: finalResult.totalTestCases,
       };
     } catch (error) {
       return {
@@ -772,11 +810,12 @@ Ejecuta el flujo:
               thread: threadId,
               resource,
             },
-            maxSteps: 10,
+            maxSteps: 50,
+            structuredOutput: { schema: testExecutionResultSchema, model: { id: 'opencode-go/qwen3.7-plus' } },
             modelSettings: { maxRetries: 2 },
           });
           // Watchdog: 5 min timeout per TC against unhandled rejections (browser/LLM hangs)
-          const resultText = await withTimeout(stream.text, 5 * 60_000, `test-executor-${tcId}`);
+          const parsedExecution = await withTimeout(stream.object, 5 * 60_000, `test-executor-${tcId}`);
 
           const htmlPath = `${inputData.certificationPath}/evidence/Evidencia-${tcId}.html`;
           let tcResult = {
@@ -786,16 +825,15 @@ Ejecuta el flujo:
             evidencePath: htmlPath,
           };
 
-          let parsedExecution: TestExecutionResult | null = null;
+          let parsedExecutionResult: TestExecutionResult | null = null;
 
           try {
-            const jsonMatch = resultText.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-              parsedExecution = JSON.parse(jsonMatch[0]) as TestExecutionResult;
+            if (parsedExecution) {
+              parsedExecutionResult = parsedExecution as TestExecutionResult;
               tcResult = {
                 id: tcId,
-                passed: Boolean(parsedExecution.passed),
-                reason: parsedExecution.reason || 'Sin descripción',
+                passed: Boolean(parsedExecutionResult.passed),
+                reason: parsedExecutionResult.reason || 'Sin descripción',
                 evidencePath: htmlPath,
               };
             }
@@ -804,9 +842,9 @@ Ejecuta el flujo:
           }
 
           // Generar HTML determinísticamente si logramos parsear el JSON con steps
-          if (parsedExecution) {
+          if (parsedExecutionResult) {
             try {
-              const htmlContent = buildEvidenceHtml(tcId, parsedExecution);
+              const htmlContent = buildEvidenceHtml(tcId, parsedExecutionResult);
               // Escribir HTML al sandbox via base64 -d para evitar escaping
               if (!projectSandbox.executeCommand) {
                 throw new Error('projectSandbox.executeCommand not available');
@@ -974,41 +1012,43 @@ Responde SOLO con JSON valido:
           resource,
         },
         maxSteps: 25,
+        structuredOutput: { schema: reportResultSchema, model: { id: 'opencode-go/qwen3.7-plus' } },
         modelSettings: { maxRetries: 2 },
       });
-      const resultText = await stream.text;
 
-      let parsedResult = {
-        reportPath: `${inputData.certificationPath}/Reporte-Certificacion.html`,
-        maturityScore: Math.round(
-          ((inputData.passedCount || 0) / (inputData.totalTests || 1)) * 100
-        ),
-        maturityClassification: 'Regular',
-      };
-
+      let parsedResult: { reportPath?: string; maturityScore?: number; maturityClassification?: string } | null = null;
       try {
-        const jsonMatch = resultText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          parsedResult = JSON.parse(jsonMatch[0]);
-        }
+        parsedResult = await stream.object;
       } catch {
         // Keep defaults
+        parsedResult = null;
       }
 
-      if (!parsedResult.maturityClassification) {
-        const score = parsedResult.maturityScore;
-        if (score >= 90) parsedResult.maturityClassification = 'Excelente';
-        else if (score >= 70) parsedResult.maturityClassification = 'Bueno';
-        else if (score >= 50) parsedResult.maturityClassification = 'Regular';
-        else parsedResult.maturityClassification = 'Critico';
+      const defaultScore = Math.round(
+        ((inputData.passedCount || 0) / (inputData.totalTests || 1)) * 100
+      );
+
+      const finalResult = {
+        reportPath: parsedResult?.reportPath ?? `${inputData.certificationPath}/Reporte-Certificacion.html`,
+        maturityScore: parsedResult?.maturityScore ?? defaultScore,
+        maturityClassification: parsedResult?.maturityClassification ?? 'Regular',
+      };
+
+      // Auto-classify si no viene de la respuesta
+      if (!parsedResult?.maturityClassification) {
+        const score = finalResult.maturityScore;
+        if (score >= 90) finalResult.maturityClassification = 'Excelente';
+        else if (score >= 70) finalResult.maturityClassification = 'Bueno';
+        else if (score >= 50) finalResult.maturityClassification = 'Regular';
+        else finalResult.maturityClassification = 'Critico';
       }
 
       return {
         ...inputData,
         onlyTestIds: inputData.onlyTestIds,
-        reportPath: parsedResult.reportPath,
-        maturityScore: parsedResult.maturityScore,
-        maturityClassification: parsedResult.maturityClassification,
+        reportPath: finalResult.reportPath,
+        maturityScore: finalResult.maturityScore,
+        maturityClassification: finalResult.maturityClassification,
       };
     } catch (error) {
       const score = Math.round(

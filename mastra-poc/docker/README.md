@@ -42,42 +42,28 @@ nombre y etiqueta de compose. Limpieza manual de huerfanos:
 docker rm -f $(docker ps -aq --filter name=mastra-task-sandbox)
 ```
 
-## QA Browser dockerizado (opcional)
+## QA Browser dockerizado
 
-Por defecto, el navegador de QA lanza Chromium localmente en el host donde corre `mastra dev`.
-Si el host carece de binarios de Playwright/Chromium, podés ejecutar el browser en un contenedor
-y conectarte via Chrome DevTools Protocol (CDP).
+El navegador de QA siempre corre en un contenedor Chromium y se conecta via
+Chrome DevTools Protocol (CDP). El workflow levanta automáticamente el servicio
+via `ensure-qa-browser`, que ejecuta `docker compose up -d` con `docker/qa-browser.compose.yml`.
 
-### Levantar el servicio Chromium
+### Requisito previo: Docker Desktop
 
-Desde la raíz del proyecto:
+Antes de correr `mastra dev`, asegurate de que **Docker Desktop está en ejecución**.
+El workflow se encargará de levantar el contenedor Chromium si no lo está.
 
-```bash
-docker compose -f docker/qa-browser.compose.yml up -d
-```
+### Servicio Chromium
 
-Esto levanta un servicio Browserless (Chromium con CDP expuesto en `ws://localhost:9222`).
-
-### Conectar QA browser al CDP
-
-Antes de correr `mastra dev`, configura la variable de entorno:
+El servicio Browserless se levanta automáticamente en el puerto 9222:
 
 ```bash
-export QA_BROWSER_CDP_URL=ws://localhost:9222
-mastra dev
+ws://localhost:9222
 ```
 
-Con esta variable configurada:
-- El browser de QA conectará al contenedor Chromium via CDP
-- La `scope` cambiará automáticamente a `'shared'` (un browser compartido en lugar de uno por thread)
-- La `appUrl` ajustará automáticamente de `localhost` a `host.docker.internal` (para que el navegador dentro de Docker pueda alcanzar la app)
-
-### Sin QA browser dockerizado
-
-Si **no** configuras `QA_BROWSER_CDP_URL`, el comportamiento es el original:
-- Browser local lanzado en headless en el host
-- Scope `'thread'` (aislamiento por thread)
-- URLs en `localhost`
+Este es el endpoint CDP fijo usado por el browser de QA. La topología es:
+- Health-check: desde el HOST en `http://localhost:{app-port}` (fetch del host)
+- appUrl (para browser QA): `http://host.docker.internal:{app-port}` (navegador en Docker)
 
 ## ⚠️ Seguridad: socket de Docker montado
 

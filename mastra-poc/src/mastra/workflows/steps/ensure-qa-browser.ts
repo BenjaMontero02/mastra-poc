@@ -2,37 +2,42 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import { PROJECT_ROOT } from '../../paths';
+import { QA_BROWSER_CDP_URL } from '../../browsers/qa-browser';
 
 const execFileAsync = promisify(execFile);
 
 /**
- * Ensure QA browser (CDP or local) is ready for test execution.
+ * Ensure QA browser (CDP) is ready for test execution.
  *
- * If QA_BROWSER_CDP_URL is not set: returns { ready: true, mode: 'local' } (no-op).
- * If QA_BROWSER_CDP_URL is set: launches docker compose in host (NOT sandbox),
- * polls the CDP endpoint for health, and returns { ready, mode }.
+ * Launches docker compose in host (NOT sandbox), polls the CDP endpoint for health,
+ * and returns { ready, mode }.
  *
  * Called at start of exploreAppStep to cover both pipeline and standalone workflows.
  * docker compose up -d is idempotent: if already running, does nothing.
  */
 export async function ensureQaBrowser(): Promise<{
   ready: boolean;
-  mode: 'cdp' | 'local';
+  mode: 'cdp';
   logs?: string;
 }> {
-  const cdpUrl = process.env.QA_BROWSER_CDP_URL;
-
-  // Local fallback: no browser service to manage
-  if (!cdpUrl) {
-    return { ready: true, mode: 'local' };
+  try {
+    // Quick check: Docker daemon must be running
+    await execFileAsync('docker', ['info', '--format', '{{.ServerVersion}}'], { timeout: 10_000 });
+  } catch (error) {
+    const logs = error instanceof Error ? error.message : String(error);
+    return {
+      ready: false,
+      mode: 'cdp',
+      logs: `Docker daemon no disponible. Iniciá Docker Desktop antes de correr la certificacion QA. Detalle: ${logs}`,
+    };
   }
 
-  try {
-    // CDP mode: launch docker compose in host
-    // Resolve compose file path from PROJECT_ROOT (respects mastra dev cwd=.mastra/output)
-    const composeFile = path.join(PROJECT_ROOT, 'docker', 'qa-browser.compose.yml');
+  // CDP mode: launch docker compose in host
+  // Resolve compose file path from PROJECT_ROOT (respects mastra dev cwd=.mastra/output)
+  const composeFile = path.join(PROJECT_ROOT, 'docker', 'qa-browser.compose.yml');
 
-    console.log(`[ensure-qa-browser] Starting docker compose from ${composeFile}...`);
+  console.log(`[ensure-qa-browser] Starting docker compose from ${composeFile}...`);
+  try {
     const upResult = await execFileAsync('docker', ['compose', '-f', composeFile, 'up', '-d'], {
       timeout: 30_000,
       maxBuffer: 1024 * 1024, // 1MB for logs
@@ -45,7 +50,7 @@ export async function ensureQaBrowser(): Promise<{
     // Poll CDP endpoint for health (~30 retries x 2s = 60s total).
     // QA_BROWSER_CDP_URL es ws:// (para Playwright), pero el healthcheck va por
     // el endpoint HTTP de CDP: fetch no soporta el esquema ws://.
-    const httpBase = cdpUrl.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
+    const httpBase = QA_BROWSER_CDP_URL.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
     const cdpHealthUrl = `${httpBase}/json/version`;
     const maxRetries = 30;
     const retryDelayMs = 2000;
